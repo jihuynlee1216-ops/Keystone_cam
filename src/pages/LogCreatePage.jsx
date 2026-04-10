@@ -165,6 +165,7 @@ export default function LogCreatePage() {
 
   const fileInputRef  = useRef(null)
   const dbSavedIds    = useRef(new Set()) // IndexedDB 저장 성공한 mediaId 목록
+  const savePromises  = useRef(new Map()) // mediaId → Promise (저장 완료 추적)
 
   const [opponent, setOpponent] = useState('')
   const [venue, setVenue]       = useState('')
@@ -220,14 +221,16 @@ export default function LogCreatePage() {
       setMedia(prev => [...prev, item])
 
       if (isVideo) {
-        putMedia(mediaId, file)
+        const p = putMedia(mediaId, file)
           .then(() => { dbSavedIds.current.add(mediaId) })
           .catch(err => { console.warn('영상 IndexedDB 저장 실패:', err) })
+        savePromises.current.set(mediaId, p)
       } else {
-        compressToBlob(file)
+        const p = compressToBlob(file)
           .then(blob => putMedia(mediaId, blob))
           .then(() => { dbSavedIds.current.add(mediaId) })
           .catch(err => { console.warn('사진 IndexedDB 저장 실패:', err) })
+        savePromises.current.set(mediaId, p)
       }
     })
     e.target.value = ''
@@ -242,30 +245,30 @@ export default function LogCreatePage() {
     setActiveIdx(0)
   }
 
-  const handleSave = () => {
+  const handleSave = async () => {
     setSaving(true)
-    setTimeout(() => {
-      // IndexedDB 저장 성공한 영상만 dataUrl을 null로 교체 (실패한 경우 blob URL 유지)
-      const cleanMedia = media.map(item =>
-        item.mediaId && dbSavedIds.current.has(item.mediaId)
-          ? { ...item, dataUrl: null }
-          : item
-      )
-      dispatch({
-        type: 'ADD_LOG',
-        payload: {
-          id: generateId(),
-          date,
-          opponent: opponent.trim(),
-          venue: venue.trim(),
-          memo: memo.trim(),
-          media: cleanMedia,
-          teamColor: 'var(--color-accent)',
-          createdAt: new Date().toISOString(),
-        },
-      })
-      navigate(`/log/${date}`, { replace: true })
-    }, 600)
+    // 진행 중인 IndexedDB 저장이 모두 완료될 때까지 대기
+    await Promise.all([...savePromises.current.values()])
+    // IndexedDB 저장 성공한 항목의 blob URL 제거 (세션 종료 후 무효이므로)
+    const cleanMedia = media.map(item =>
+      item.mediaId && dbSavedIds.current.has(item.mediaId)
+        ? { ...item, dataUrl: null }
+        : item
+    )
+    dispatch({
+      type: 'ADD_LOG',
+      payload: {
+        id: generateId(),
+        date,
+        opponent: opponent.trim(),
+        venue: venue.trim(),
+        memo: memo.trim(),
+        media: cleanMedia,
+        teamColor: 'var(--color-accent)',
+        createdAt: new Date().toISOString(),
+      },
+    })
+    navigate(`/log/${date}`, { replace: true })
   }
 
   const canSave = memo.trim() || media.length > 0

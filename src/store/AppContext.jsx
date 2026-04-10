@@ -98,6 +98,14 @@ export function AppProvider({ children }) {
         // 예시 데이터(seed-)로 시작하는 id 제거
         if (parsed.logs) {
           parsed.logs = parsed.logs.filter(l => !l.id.startsWith('seed-'))
+          // blob URL은 페이지 새로고침 후 무효 → 제거해서 IndexedDB에서 다시 로드
+          parsed.logs = parsed.logs.map(l => ({
+            ...l,
+            media: (l.media || []).map(m => ({
+              ...m,
+              dataUrl: m.dataUrl?.startsWith('blob:') ? null : m.dataUrl,
+            })),
+          }))
         }
         dispatch({ type: 'HYDRATE', payload: parsed })
       } catch (_) {
