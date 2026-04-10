@@ -161,6 +161,9 @@
   height: 100%;
   object-fit: cover;
   pointer-events: none;
+  /* iOS Safari: overflow:hidden + border-radius 컨테이너 안 video 검은화면 방지 */
+  -webkit-transform: translateZ(0);
+  transform: translateZ(0);
 }
 
 .media-editor-card__placeholder {

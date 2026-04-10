@@ -54,7 +54,17 @@ function MediaEditorCard({ item, onUpdate, onRemove, isActive }) {
           <img src={mediaSrc} alt="" className="media-editor-card__img" />
         )}
         {mediaSrc && item.type === 'video' && (
-          <video key={mediaSrc} src={mediaSrc} className="media-editor-card__img" muted playsInline loop autoPlay preload="auto" />
+          <video
+            key={mediaSrc}
+            src={mediaSrc}
+            className="media-editor-card__img"
+            muted
+            playsInline
+            loop
+            autoPlay
+            preload="auto"
+            onCanPlay={e => e.target.play().catch(() => {})}
+          />
         )}
 
         {!mediaSrc && (
@@ -153,7 +163,8 @@ export default function LogCreatePage() {
   const { date }   = useParams()
   const { dispatch } = useApp()
 
-  const fileInputRef = useRef(null)
+  const fileInputRef  = useRef(null)
+  const dbSavedIds    = useRef(new Set()) // IndexedDB 저장 성공한 mediaId 목록
 
   const [opponent, setOpponent] = useState('')
   const [venue, setVenue]       = useState('')
@@ -205,9 +216,11 @@ export default function LogCreatePage() {
         }
         // 먼저 UI에 추가한 뒤 IndexedDB에 저장 (UI 블로킹 방지)
         setMedia(prev => [...prev, item])
-        putMedia(mediaId, file).catch(err => {
-          console.warn('영상 IndexedDB 저장 실패:', err)
-        })
+        putMedia(mediaId, file)
+          .then(() => { dbSavedIds.current.add(mediaId) })
+          .catch(err => {
+            console.warn('영상 IndexedDB 저장 실패:', err)
+          })
       } else {
         const reader = new FileReader()
         reader.onload = async (ev) => {
@@ -239,9 +252,11 @@ export default function LogCreatePage() {
   const handleSave = () => {
     setSaving(true)
     setTimeout(() => {
-      // 영상의 임시 blob URL은 localStorage에 저장하지 않음 (mediaId로 IDB에서 복원)
+      // IndexedDB 저장 성공한 영상만 dataUrl을 null로 교체 (실패한 경우 blob URL 유지)
       const cleanMedia = media.map(item =>
-        item.mediaId ? { ...item, dataUrl: null } : item
+        item.mediaId && dbSavedIds.current.has(item.mediaId)
+          ? { ...item, dataUrl: null }
+          : item
       )
       dispatch({
         type: 'ADD_LOG',
