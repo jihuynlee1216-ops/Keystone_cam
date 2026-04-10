@@ -156,7 +156,7 @@ function drawSlideToCanvas(ctx, W, H, img, item) {
   ctx.fillStyle = '#0f3460'
   ctx.fillRect(0, 0, W, H)
 
-  if (img) {
+  if (img && img.naturalWidth > 0 && img.naturalHeight > 0) {
     const scale = Math.max(W / img.naturalWidth, H / img.naturalHeight)
     const sw = img.naturalWidth * scale
     const sh = img.naturalHeight * scale
@@ -266,17 +266,31 @@ async function saveVideo(logs, titleText, onProgress) {
   const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp8')
     ? 'video/webm;codecs=vp8'
     : 'video/webm'
-  const stream   = canvas.captureStream(24)
+  // captureStream(0): 수동 프레임 제어 → requestFrame() 호출 시에만 캡처
+  // (자동 24fps 방식은 일부 브라우저에서 검은 화면 발생)
+  const stream   = canvas.captureStream(0)
+  const videoTrack = stream.getVideoTracks()[0]
   const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 2_000_000 })
   const chunks   = []
   recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data) }
+
+  // 첫 프레임 미리 그려두고 녹화 시작 (시작 부분 검은 화면 방지)
+  drawSlideToCanvas(ctx, W, H, loadedImages[0], allMedia[0])
+  if (videoTrack.requestFrame) videoTrack.requestFrame()
   recorder.start(200)
 
   const SLIDE_MS = 2000
   for (let i = 0; i < allMedia.length; i++) {
     onProgress?.(i, allMedia.length)
     drawSlideToCanvas(ctx, W, H, loadedImages[i], allMedia[i])
+    // 각 슬라이드를 스트림에 명시적으로 전송
+    if (videoTrack.requestFrame) videoTrack.requestFrame()
+    // SLIDE_MS 동안 30fps로 동일 프레임을 반복 전송 (부드러운 영상)
+    const frameInterval = setInterval(() => {
+      if (videoTrack.requestFrame) videoTrack.requestFrame()
+    }, 33)
     await new Promise(r => setTimeout(r, SLIDE_MS))
+    clearInterval(frameInterval)
   }
 
   await new Promise(resolve => { recorder.onstop = resolve; recorder.stop() })
