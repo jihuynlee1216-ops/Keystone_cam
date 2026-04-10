@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useApp } from '../store/AppContext.jsx'
 import { useMediaSrc } from '../hooks/useMediaSrc.js'
+import { getMedia } from '../store/mediaDB'
 import BaseballCharacter from '../components/BaseballCharacter.jsx'
 import BottomNav from '../components/BottomNav.jsx'
 import './VideoPreviewPage.css'
@@ -150,20 +151,147 @@ function Slideshow({ logs, transition }) {
   )
 }
 
-/* ─── Share helper ───────────────────────────────────────────────────── */
-async function shareVideo(title, desc) {
-  const shareData = {
-    title,
-    text: `${title}\n${desc}`,
-    url: window.location.origin,
+/* ─── Canvas drawing helper ──────────────────────────────────────────── */
+function drawSlideToCanvas(ctx, W, H, img, item) {
+  ctx.fillStyle = '#0f3460'
+  ctx.fillRect(0, 0, W, H)
+
+  if (img) {
+    const scale = Math.max(W / img.naturalWidth, H / img.naturalHeight)
+    const sw = img.naturalWidth * scale
+    const sh = img.naturalHeight * scale
+    ctx.drawImage(img, (W - sw) / 2, (H - sh) / 2, sw, sh)
   }
-  if (navigator.canShare && navigator.canShare(shareData)) {
-    await navigator.share(shareData)
-    return 'shared'
+
+  // Gradient vignette
+  const grad = ctx.createLinearGradient(0, H * 0.45, 0, H)
+  grad.addColorStop(0, 'rgba(0,0,0,0)')
+  grad.addColorStop(1, 'rgba(0,0,0,0.75)')
+  ctx.fillStyle = grad
+  ctx.fillRect(0, 0, W, H)
+
+  ctx.textBaseline = 'bottom'
+  if (item.logDate) {
+    const dateObj = new Date(item.logDate + 'T00:00:00')
+    const displayDate = dateObj.toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' })
+    ctx.fillStyle = 'rgba(255,255,255,0.65)'
+    ctx.font = '14px -apple-system, sans-serif'
+    ctx.fillText(displayDate, 20, H - 46)
   }
-  // Fallback: clipboard
-  await navigator.clipboard.writeText(`${title}\n${desc}\n${window.location.origin}`)
-  return 'copied'
+  if (item.caption) {
+    ctx.fillStyle = '#fff'
+    ctx.font = 'bold 17px -apple-system, sans-serif'
+    ctx.fillText(item.caption, 20, H - 22)
+  }
+}
+
+/* ─── Save helper ────────────────────────────────────────────────────── */
+async function saveVideo(logs, titleText, onProgress) {
+  const allMedia = logs
+    .flatMap(log =>
+      (log.media || []).map(m => ({ ...m, logDate: log.date }))
+    )
+    .slice(0, 12)
+
+  if (allMedia.length === 0) return 'no-media'
+
+  const W = 390, H = 690
+  const canvas = document.createElement('canvas')
+  canvas.width = W
+  canvas.height = H
+  const ctx = canvas.getContext('2d')
+
+  // Resolve each media item to an src string
+  const blobUrls = []
+  const resolvedSrcs = []
+  for (const item of allMedia) {
+    let src = null
+    if (item.dataUrl) {
+      src = item.dataUrl
+    } else if (item.mediaId) {
+      const blob = await getMedia(item.mediaId)
+      if (blob) {
+        src = URL.createObjectURL(blob)
+        blobUrls.push(src)
+      }
+    }
+    resolvedSrcs.push(src)
+  }
+
+  // Pre-load images (skip video items)
+  const loadedImages = await Promise.all(
+    allMedia.map((item, i) => {
+      const src = resolvedSrcs[i]
+      if (!src || item.type === 'video') return Promise.resolve(null)
+      return new Promise(resolve => {
+        const img = new Image()
+        img.onload = () => resolve(img)
+        img.onerror = () => resolve(null)
+        img.src = src
+      })
+    })
+  )
+
+  const cleanup = () => blobUrls.forEach(u => URL.revokeObjectURL(u))
+
+  const canRecord =
+    typeof MediaRecorder !== 'undefined' &&
+    typeof canvas.captureStream === 'function' &&
+    (MediaRecorder.isTypeSupported('video/webm;codecs=vp8') ||
+     MediaRecorder.isTypeSupported('video/webm'))
+
+  // ── iOS / no-recorder fallback: share/download as PNG ──
+  if (!canRecord) {
+    drawSlideToCanvas(ctx, W, H, loadedImages[0] || null, allMedia[0])
+    const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'))
+    const file = new File([blob], `${titleText}.png`, { type: 'image/png' })
+    cleanup()
+
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file], title: titleText })
+      return 'saved'
+    }
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${titleText}.png`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+    return 'saved'
+  }
+
+  // ── Canvas recording (Chrome / Android) ──
+  const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp8')
+    ? 'video/webm;codecs=vp8'
+    : 'video/webm'
+  const stream   = canvas.captureStream(24)
+  const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 2_000_000 })
+  const chunks   = []
+  recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data) }
+  recorder.start(200)
+
+  const SLIDE_MS = 2000
+  for (let i = 0; i < allMedia.length; i++) {
+    onProgress?.(i, allMedia.length)
+    drawSlideToCanvas(ctx, W, H, loadedImages[i], allMedia[i])
+    await new Promise(r => setTimeout(r, SLIDE_MS))
+  }
+
+  await new Promise(resolve => { recorder.onstop = resolve; recorder.stop() })
+  cleanup()
+
+  const blob = new Blob(chunks, { type: 'video/webm' })
+  const url  = URL.createObjectURL(blob)
+  const a    = document.createElement('a')
+  a.href = url
+  a.download = `${titleText}.webm`
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+  return 'saved'
 }
 
 /* ─── Page ───────────────────────────────────────────────────────────── */
@@ -176,7 +304,8 @@ export default function VideoPreviewPage() {
   const [selectedMusic, setSelectedMusic]           = useState('soft')
   const [generating, setGenerating]                 = useState(false)
   const [generated, setGenerated]                   = useState(false)
-  const [shareStatus, setShareStatus]               = useState(null) // null | 'sharing' | 'copied'
+  const [saveStatus, setSaveStatus]                 = useState(null) // null | 'saving' | 'saved'
+  const [saveProgress, setSaveProgress]             = useState(null) // { cur, total }
 
   const now          = new Date()
   const currentYear  = now.getFullYear()
@@ -196,16 +325,28 @@ export default function VideoPreviewPage() {
     setTimeout(() => { setGenerating(false); setGenerated(true) }, 2400)
   }
 
-  const handleShare = async () => {
-    setShareStatus('sharing')
+  const handleSave = async () => {
+    setSaveStatus('saving')
+    setSaveProgress(null)
     try {
-      const result = await shareVideo(titleText, descText)
-      setShareStatus(result === 'copied' ? 'copied' : null)
-      if (result === 'copied') setTimeout(() => setShareStatus(null), 2200)
+      await saveVideo(relevantLogs, titleText, (cur, total) => {
+        setSaveProgress({ cur: cur + 1, total })
+      })
+      setSaveStatus('saved')
+      setTimeout(() => setSaveStatus(null), 3000)
     } catch (err) {
-      if (err.name !== 'AbortError') setShareStatus(null)
-      else setShareStatus(null)
+      console.error(err)
+      setSaveStatus(null)
     }
+  }
+
+  const saveLabel = () => {
+    if (saveStatus === 'saving') {
+      if (saveProgress) return `저장 중... ${saveProgress.cur}/${saveProgress.total}`
+      return '저장 중...'
+    }
+    if (saveStatus === 'saved') return '저장됨 ✓'
+    return '저장하기'
   }
 
   return (
@@ -300,20 +441,25 @@ export default function VideoPreviewPage() {
               <BaseballCharacter size={56} mood="cheer" className="video-preview-done__char" />
               <div>
                 <p className="video-preview-done__title">영상이 준비됐어요!</p>
-                <p className="video-preview-done__sub">저장 또는 공유할 수 있어요</p>
+                <p className="video-preview-done__sub">
+                  {saveStatus === 'saving' ? '기기에 저장하는 중...' : '기기에 저장할 수 있어요'}
+                </p>
               </div>
             </div>
             <div className="video-preview-done__actions">
               <button
-                className={`video-preview-done__btn video-preview-done__btn--share ${shareStatus ? 'sharing' : ''}`}
-                onClick={handleShare}
-                disabled={shareStatus === 'sharing'}
+                className={`video-preview-done__btn video-preview-done__btn--save ${saveStatus ? saveStatus : ''}`}
+                onClick={handleSave}
+                disabled={saveStatus === 'saving'}
               >
-                {shareStatus === 'copied' ? '링크 복사됨 ✓' : shareStatus === 'sharing' ? '공유 중...' : '공유하기'}
+                {saveStatus === 'saving' && (
+                  <span className="video-preview-done__btn-spinner" />
+                )}
+                {saveLabel()}
               </button>
               <button
                 className="video-preview-done__btn video-preview-done__btn--reset"
-                onClick={() => setGenerated(false)}
+                onClick={() => { setGenerated(false); setSaveStatus(null) }}
               >
                 다시 만들기
               </button>
@@ -321,9 +467,9 @@ export default function VideoPreviewPage() {
           </div>
         )}
 
-        {/* Clipboard toast */}
-        {shareStatus === 'copied' && (
-          <div className="video-preview-toast">링크가 복사됐어요</div>
+        {/* Save done toast */}
+        {saveStatus === 'saved' && (
+          <div className="video-preview-toast">기기에 저장됐어요</div>
         )}
       </div>
 
