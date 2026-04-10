@@ -1,4 +1,5 @@
-import React, { createContext, useContext, useReducer, useEffect } from 'react'
+import React, { createContext, useContext, useReducer, useEffect, useCallback } from 'react'
+import { deleteMedia } from './mediaDB'
 
 /* ─── Data Model ─────────────────────────────────────────────────────── *
  *
@@ -106,7 +107,21 @@ export function AppProvider({ children }) {
   }, [])
 
   useEffect(() => {
-    localStorage.setItem('sports-archive-state', JSON.stringify(state))
+    try {
+      localStorage.setItem('sports-archive-state', JSON.stringify(state))
+    } catch (e) {
+      // QuotaExceededError: 사진 용량 초과 시 미디어 없이 저장 시도
+      try {
+        const fallback = {
+          ...state,
+          logs: state.logs.map(l => ({ ...l, media: [] })),
+        }
+        localStorage.setItem('sports-archive-state', JSON.stringify(fallback))
+        console.warn('저장 용량 초과 - 미디어 제외 후 저장됨')
+      } catch (_) {
+        console.error('localStorage 저장 실패:', e)
+      }
+    }
   }, [state])
 
   // Apply accent color as CSS variable
@@ -119,8 +134,19 @@ export function AppProvider({ children }) {
     )
   }, [state.user.teamColor])
 
+  // IDB 영상 정리를 포함한 dispatch 래퍼
+  const enhancedDispatch = useCallback((action) => {
+    if (action.type === 'DELETE_LOG') {
+      const log = state.logs.find(l => l.id === action.payload)
+      log?.media?.forEach(item => {
+        if (item.mediaId) deleteMedia(item.mediaId)
+      })
+    }
+    dispatch(action)
+  }, [state.logs])
+
   return (
-    <AppContext.Provider value={{ state, dispatch }}>
+    <AppContext.Provider value={{ state, dispatch: enhancedDispatch }}>
       {children}
     </AppContext.Provider>
   )

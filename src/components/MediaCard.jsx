@@ -1,4 +1,5 @@
-import React, { useRef } from 'react'
+import React from 'react'
+import { useMediaSrc } from '../hooks/useMediaSrc.js'
 import './MediaCard.css'
 
 /* Placeholder gradient images for seed data */
@@ -16,8 +17,9 @@ function getPlaceholder(id) {
 }
 
 export default function MediaCard({ item, index = 0, onClick }) {
-  const isImage = item.type !== 'video'
-  const hasMedia = !!item.dataUrl
+  const isImage  = item.type !== 'video'
+  const mediaSrc = useMediaSrc(item)
+  const hasMedia = !!mediaSrc
 
   const fontSizeMap = { small: '13px', medium: '18px', large: '26px' }
   const overlaySize = fontSizeMap[item.overlay?.size || 'medium']
@@ -29,10 +31,10 @@ export default function MediaCard({ item, index = 0, onClick }) {
         style={!hasMedia ? { background: getPlaceholder(item.id) } : undefined}
       >
         {hasMedia && isImage && (
-          <img src={item.dataUrl} alt={item.caption || ''} className="media-card__img" />
+          <img src={mediaSrc} alt={item.caption || ''} className="media-card__img" />
         )}
         {hasMedia && !isImage && (
-          <video src={item.dataUrl} className="media-card__video" muted playsInline loop autoPlay />
+          <video src={mediaSrc} className="media-card__video" muted playsInline loop autoPlay />
         )}
 
         {/* Text overlay */}

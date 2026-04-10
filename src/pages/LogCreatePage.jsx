@@ -1,6 +1,8 @@
 import React, { useState, useRef, useCallback } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useApp, generateId } from '../store/AppContext.jsx'
+import { putMedia } from '../store/mediaDB.js'
+import { useMediaSrc } from '../hooks/useMediaSrc.js'
 import PageHeader from '../components/PageHeader.jsx'
 import './LogCreatePage.css'
 
@@ -13,6 +15,7 @@ function MediaEditorCard({ item, onUpdate, onRemove, isActive }) {
     item.overlay || { text: '', x: 50, y: 50, size: 'medium' }
   )
   const mediaRef = useRef(null)
+  const mediaSrc = useMediaSrc(item)
 
   const handleTapPosition = useCallback((e) => {
     if (!showOverlayEditor) return
@@ -33,7 +36,7 @@ function MediaEditorCard({ item, onUpdate, onRemove, isActive }) {
   }
 
   const fontSizeMap = { small: '13px', medium: '18px', large: '26px' }
-  const bg = item.dataUrl
+  const bg = mediaSrc
     ? undefined
     : `linear-gradient(145deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)`
 
@@ -47,14 +50,14 @@ function MediaEditorCard({ item, onUpdate, onRemove, isActive }) {
         onClick={handleTapPosition}
         onTouchEnd={handleTapPosition}
       >
-        {item.dataUrl && item.type === 'image' && (
-          <img src={item.dataUrl} alt="" className="media-editor-card__img" />
+        {mediaSrc && item.type === 'image' && (
+          <img src={mediaSrc} alt="" className="media-editor-card__img" />
         )}
-        {item.dataUrl && item.type === 'video' && (
-          <video src={item.dataUrl} className="media-editor-card__img" muted playsInline loop autoPlay />
+        {mediaSrc && item.type === 'video' && (
+          <video src={mediaSrc} className="media-editor-card__img" muted playsInline loop autoPlay />
         )}
 
-        {!item.dataUrl && (
+        {!mediaSrc && (
           <div className="media-editor-card__placeholder">
             <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
               <path d="M14 3H6a2 2 0 00-2 2v14a2 2 0 002 2h12a2 2 0 002-2V9l-6-6z"
@@ -165,22 +168,59 @@ export default function LogCreatePage() {
     year: 'numeric', month: 'long', day: 'numeric', weekday: 'short',
   })
 
+  const compressImage = (dataUrl, maxDim = 1200, quality = 0.82) =>
+    new Promise((resolve) => {
+      const img = new Image()
+      img.onload = () => {
+        let { width, height } = img
+        if (width > maxDim || height > maxDim) {
+          if (width > height) { height = Math.round(height * maxDim / width); width = maxDim }
+          else                { width  = Math.round(width  * maxDim / height); height = maxDim }
+        }
+        const canvas = document.createElement('canvas')
+        canvas.width  = width
+        canvas.height = height
+        canvas.getContext('2d').drawImage(img, 0, 0, width, height)
+        resolve(canvas.toDataURL('image/jpeg', quality))
+      }
+      img.onerror = () => resolve(dataUrl) // 실패 시 원본 유지
+      img.src = dataUrl
+    })
+
   const handleFileChange = (e) => {
     const files = Array.from(e.target.files || [])
-    files.forEach(file => {
-      const reader = new FileReader()
-      reader.onload = (ev) => {
+    files.forEach(async (file) => {
+      const isVideo = file.type.startsWith('video')
+
+      if (isVideo) {
+        // 영상은 IndexedDB에 Blob으로 저장, state에는 mediaId만 남김
+        const mediaId = generateId()
+        await putMedia(mediaId, file)
+        const tempUrl = URL.createObjectURL(file) // 현재 세션 미리보기용
         const item = {
           id: generateId(),
-          type: file.type.startsWith('video') ? 'video' : 'image',
-          dataUrl: ev.target.result,
+          type: 'video',
+          dataUrl: tempUrl,   // 현재 세션에서 미리보기용 (저장 시 제거됨)
+          mediaId,
           caption: '',
           overlay: null,
         }
         setMedia(prev => [...prev, item])
-        setActiveIdx(prev => (prev >= media.length ? media.length : prev))
+      } else {
+        const reader = new FileReader()
+        reader.onload = async (ev) => {
+          const dataUrl = await compressImage(ev.target.result)
+          const item = {
+            id: generateId(),
+            type: 'image',
+            dataUrl,
+            caption: '',
+            overlay: null,
+          }
+          setMedia(prev => [...prev, item])
+        }
+        reader.readAsDataURL(file)
       }
-      reader.readAsDataURL(file)
     })
     e.target.value = ''
   }
@@ -197,6 +237,10 @@ export default function LogCreatePage() {
   const handleSave = () => {
     setSaving(true)
     setTimeout(() => {
+      // 영상의 임시 blob URL은 localStorage에 저장하지 않음 (mediaId로 IDB에서 복원)
+      const cleanMedia = media.map(item =>
+        item.mediaId ? { ...item, dataUrl: null } : item
+      )
       dispatch({
         type: 'ADD_LOG',
         payload: {
@@ -205,7 +249,7 @@ export default function LogCreatePage() {
           opponent: opponent.trim(),
           venue: venue.trim(),
           memo: memo.trim(),
-          media,
+          media: cleanMedia,
           teamColor: 'var(--color-accent)',
           createdAt: new Date().toISOString(),
         },

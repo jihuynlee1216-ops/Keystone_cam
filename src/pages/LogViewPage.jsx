@@ -1,8 +1,51 @@
 import React, { useState, useRef } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useApp, getLogByDate } from '../store/AppContext.jsx'
+import { useMediaSrc } from '../hooks/useMediaSrc.js'
 import MediaCard from '../components/MediaCard.jsx'
 import './LogViewPage.css'
+
+function MediaItemView({ item, idx, activeIdx }) {
+  const mediaSrc = useMediaSrc(item)
+  const fontSizeMap = { small: '13px', medium: '19px', large: '28px' }
+
+  return (
+    <div className={`log-view__media-item ${idx === activeIdx ? 'active' : ''}`}>
+      <div
+        className="log-view__media-bg"
+        style={!mediaSrc ? {
+          background: PLACEHOLDER_GRADIENTS[idx % PLACEHOLDER_GRADIENTS.length],
+        } : undefined}
+      >
+        {mediaSrc && item.type === 'image' && (
+          <img src={mediaSrc} alt={item.caption || ''} className="log-view__media-img" />
+        )}
+        {mediaSrc && item.type === 'video' && (
+          <video src={mediaSrc} className="log-view__media-img" muted playsInline loop autoPlay />
+        )}
+
+        <div className="log-view__media-gradient" />
+
+        {item.overlay?.text && (
+          <div
+            className="log-view__overlay-text"
+            style={{
+              left: `${item.overlay.x}%`,
+              top:  `${item.overlay.y}%`,
+              fontSize: fontSizeMap[item.overlay.size || 'medium'],
+            }}
+          >
+            {item.overlay.text}
+          </div>
+        )}
+
+        {item.caption && (
+          <div className="log-view__media-caption">{item.caption}</div>
+        )}
+      </div>
+    </div>
+  )
+}
 
 const PLACEHOLDER_GRADIENTS = [
   'linear-gradient(145deg, #1a1a2e 0%, #16213e 40%, #0f3460 100%)',
@@ -87,46 +130,12 @@ export default function LogViewPage() {
             onScroll={handleScroll}
           >
             {log.media.map((item, idx) => (
-              <div
+              <MediaItemView
                 key={item.id}
-                className={`log-view__media-item ${idx === activeIdx ? 'active' : ''}`}
-              >
-                <div
-                  className="log-view__media-bg"
-                  style={!item.dataUrl ? {
-                    background: PLACEHOLDER_GRADIENTS[idx % PLACEHOLDER_GRADIENTS.length],
-                  } : undefined}
-                >
-                  {item.dataUrl && item.type === 'image' && (
-                    <img src={item.dataUrl} alt={item.caption || ''} className="log-view__media-img" />
-                  )}
-                  {item.dataUrl && item.type === 'video' && (
-                    <video src={item.dataUrl} className="log-view__media-img" muted playsInline loop autoPlay />
-                  )}
-
-                  {/* Gradient overlay */}
-                  <div className="log-view__media-gradient" />
-
-                  {/* Text overlay */}
-                  {item.overlay?.text && (
-                    <div
-                      className="log-view__overlay-text"
-                      style={{
-                        left: `${item.overlay.x}%`,
-                        top:  `${item.overlay.y}%`,
-                        fontSize: { small: '13px', medium: '19px', large: '28px' }[item.overlay.size || 'medium'],
-                      }}
-                    >
-                      {item.overlay.text}
-                    </div>
-                  )}
-
-                  {/* Caption */}
-                  {item.caption && (
-                    <div className="log-view__media-caption">{item.caption}</div>
-                  )}
-                </div>
-              </div>
+                item={item}
+                idx={idx}
+                activeIdx={activeIdx}
+              />
             ))}
           </div>
 
