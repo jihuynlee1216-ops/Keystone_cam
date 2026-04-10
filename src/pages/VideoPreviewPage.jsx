@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useApp } from '../store/AppContext.jsx'
+import { useMediaSrc } from '../hooks/useMediaSrc.js'
 import BaseballCharacter from '../components/BaseballCharacter.jsx'
 import BottomNav from '../components/BottomNav.jsx'
 import './VideoPreviewPage.css'
@@ -22,6 +23,64 @@ const PLACEHOLDER_GRADIENTS = [
 ]
 
 const OVERLAY_FONT_SIZE = { small: '13px', medium: '19px', large: '28px' }
+
+function SlideFrame({ item, phase, currentIdx, total }) {
+  const mediaSrc = useMediaSrc(item)
+
+  const bg = !mediaSrc
+    ? PLACEHOLDER_GRADIENTS[currentIdx % PLACEHOLDER_GRADIENTS.length]
+    : undefined
+
+  const dateObj     = item.logDate ? new Date(item.logDate + 'T00:00:00') : null
+  const displayDate = dateObj?.toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' })
+
+  return (
+    <div
+      className={`slideshow__frame slideshow__frame--${phase}`}
+      style={{ background: bg }}
+    >
+      {/* ── Media ── */}
+      {mediaSrc && item.type !== 'video' && (
+        <img src={mediaSrc} alt="" className="slideshow__img" />
+      )}
+      {mediaSrc && item.type === 'video' && (
+        <video
+          src={mediaSrc}
+          className="slideshow__img"
+          muted playsInline loop autoPlay
+        />
+      )}
+
+      {/* ── Gradient vignette ── */}
+      <div className="slideshow__gradient" />
+
+      {/* ── Text overlay from media item (the one the user positioned) ── */}
+      {item?.overlay?.text && (
+        <div
+          className="slideshow__overlay-text"
+          style={{
+            left:     `${item.overlay.x}%`,
+            top:      `${item.overlay.y}%`,
+            fontSize: OVERLAY_FONT_SIZE[item.overlay.size || 'medium'],
+          }}
+        >
+          {item.overlay.text}
+        </div>
+      )}
+
+      {/* ── Bottom caption + date ── */}
+      <div className="slideshow__text-block">
+        {displayDate && <span className="slideshow__slide-date">{displayDate}</span>}
+        {item?.caption && <span className="slideshow__slide-caption">{item.caption}</span>}
+      </div>
+
+      {/* Slide counter */}
+      <div className="slideshow__counter">
+        {currentIdx + 1} / {total}
+      </div>
+    </div>
+  )
+}
 
 function Slideshow({ logs, transition }) {
   const [currentIdx, setCurrentIdx] = useState(0)
@@ -46,7 +105,6 @@ function Slideshow({ logs, transition }) {
       setTimeout(() => {
         setCurrentIdx(i => (i + 1) % allMedia.length)
         setPhase('enter')
-        // brief enter → visible
         setTimeout(() => setPhase('visible'), 50)
       }, 380)
     }, 3000)
@@ -63,61 +121,16 @@ function Slideshow({ logs, transition }) {
     )
   }
 
-  const item    = allMedia[currentIdx]
-  const hasData = !!item?.dataUrl
-  const bg      = !hasData
-    ? PLACEHOLDER_GRADIENTS[currentIdx % PLACEHOLDER_GRADIENTS.length]
-    : undefined
-
-  const dateObj     = item.logDate ? new Date(item.logDate + 'T00:00:00') : null
-  const displayDate = dateObj?.toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' })
+  const item = allMedia[currentIdx]
 
   return (
     <div className={`slideshow slideshow--${transition}`}>
-      <div
-        className={`slideshow__frame slideshow__frame--${phase}`}
-        style={{ background: bg }}
-      >
-        {/* ── Media ── */}
-        {hasData && item.type !== 'video' && (
-          <img src={item.dataUrl} alt="" className="slideshow__img" />
-        )}
-        {hasData && item.type === 'video' && (
-          <video
-            src={item.dataUrl}
-            className="slideshow__img"
-            muted playsInline loop autoPlay
-          />
-        )}
-
-        {/* ── Gradient vignette ── */}
-        <div className="slideshow__gradient" />
-
-        {/* ── Text overlay from media item (the one the user positioned) ── */}
-        {item?.overlay?.text && (
-          <div
-            className="slideshow__overlay-text"
-            style={{
-              left:     `${item.overlay.x}%`,
-              top:      `${item.overlay.y}%`,
-              fontSize: OVERLAY_FONT_SIZE[item.overlay.size || 'medium'],
-            }}
-          >
-            {item.overlay.text}
-          </div>
-        )}
-
-        {/* ── Bottom caption + date ── */}
-        <div className="slideshow__text-block">
-          {displayDate && <span className="slideshow__slide-date">{displayDate}</span>}
-          {item?.caption && <span className="slideshow__slide-caption">{item.caption}</span>}
-        </div>
-
-        {/* Slide counter */}
-        <div className="slideshow__counter">
-          {currentIdx + 1} / {allMedia.length}
-        </div>
-      </div>
+      <SlideFrame
+        item={item}
+        phase={phase}
+        currentIdx={currentIdx}
+        total={allMedia.length}
+      />
 
       {/* Progress bar */}
       {allMedia.length > 1 && (

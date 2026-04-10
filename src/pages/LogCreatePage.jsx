@@ -189,23 +189,25 @@ export default function LogCreatePage() {
 
   const handleFileChange = (e) => {
     const files = Array.from(e.target.files || [])
-    files.forEach(async (file) => {
-      const isVideo = file.type.startsWith('video')
+    files.forEach((file) => {
+      const isVideo = file.type.startsWith('video') || file.name?.match(/\.(mp4|mov|avi|webm|mkv)$/i)
 
       if (isVideo) {
-        // 영상은 IndexedDB에 Blob으로 저장, state에는 mediaId만 남김
         const mediaId = generateId()
-        await putMedia(mediaId, file)
         const tempUrl = URL.createObjectURL(file) // 현재 세션 미리보기용
         const item = {
           id: generateId(),
           type: 'video',
-          dataUrl: tempUrl,   // 현재 세션에서 미리보기용 (저장 시 제거됨)
+          dataUrl: tempUrl,
           mediaId,
           caption: '',
           overlay: null,
         }
+        // 먼저 UI에 추가한 뒤 IndexedDB에 저장 (UI 블로킹 방지)
         setMedia(prev => [...prev, item])
+        putMedia(mediaId, file).catch(err => {
+          console.warn('영상 IndexedDB 저장 실패:', err)
+        })
       } else {
         const reader = new FileReader()
         reader.onload = async (ev) => {
