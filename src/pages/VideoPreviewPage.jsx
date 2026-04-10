@@ -50,6 +50,7 @@ function SlideFrame({ item, phase, currentIdx, total }) {
           src={mediaSrc}
           className="slideshow__img"
           muted playsInline loop autoPlay preload="auto"
+          onCanPlay={e => e.target.play().catch(() => {})}
         />
       )}
 
@@ -170,6 +171,23 @@ function drawSlideToCanvas(ctx, W, H, img, item) {
   ctx.fillStyle = grad
   ctx.fillRect(0, 0, W, H)
 
+  // Overlay text (user-positioned)
+  if (item.overlay?.text) {
+    const fontSizeMap = { small: '13px', medium: '19px', large: '28px' }
+    const fontSize = fontSizeMap[item.overlay.size || 'medium']
+    ctx.save()
+    ctx.textBaseline = 'middle'
+    ctx.textAlign = 'center'
+    ctx.font = `600 ${fontSize} -apple-system, sans-serif`
+    ctx.fillStyle = '#fff'
+    ctx.shadowColor = 'rgba(0,0,0,0.65)'
+    ctx.shadowBlur = 10
+    const ox = (item.overlay.x / 100) * W
+    const oy = (item.overlay.y / 100) * H
+    ctx.fillText(item.overlay.text, ox, oy)
+    ctx.restore()
+  }
+
   ctx.textBaseline = 'bottom'
   if (item.logDate) {
     const dateObj = new Date(item.logDate + 'T00:00:00')
@@ -218,11 +236,32 @@ async function saveVideo(logs, titleText, onProgress) {
     resolvedSrcs.push(src)
   }
 
-  // Pre-load images (skip video items)
+  // Pre-load images; for video items, seek to first frame and capture
   const loadedImages = await Promise.all(
     allMedia.map((item, i) => {
       const src = resolvedSrcs[i]
-      if (!src || item.type === 'video') return Promise.resolve(null)
+      if (!src) return Promise.resolve(null)
+      if (item.type === 'video') {
+        return new Promise(resolve => {
+          const vid = document.createElement('video')
+          vid.muted = true
+          vid.playsInline = true
+          vid.preload = 'metadata'
+          vid.onloadeddata = () => {
+            // Draw the first frame onto a temp canvas, return as Image
+            const tc = document.createElement('canvas')
+            tc.width = vid.videoWidth || 390
+            tc.height = vid.videoHeight || 690
+            tc.getContext('2d').drawImage(vid, 0, 0, tc.width, tc.height)
+            const snap = new Image()
+            snap.onload = () => resolve(snap)
+            snap.onerror = () => resolve(null)
+            snap.src = tc.toDataURL('image/jpeg', 0.85)
+          }
+          vid.onerror = () => resolve(null)
+          vid.src = src
+        })
+      }
       return new Promise(resolve => {
         const img = new Image()
         img.onload = () => resolve(img)
