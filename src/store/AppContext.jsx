@@ -29,46 +29,6 @@ import React, { createContext, useContext, useReducer, useEffect } from 'react'
  * }
  * ──────────────────────────────────────────────────────────────────── */
 
-const SEED_LOGS = [
-  {
-    id: 'seed-1',
-    date: '2026-04-03',
-    opponent: 'LG 트윈스',
-    venue: '잠실 야구장',
-    memo: '역전 끝내기 홈런. 소리를 질렀다. 목이 아프다.',
-    teamColor: '#003087',
-    media: [
-      { id: 'm1', type: 'image', dataUrl: null, caption: '시구 전 전경', overlay: null },
-      { id: 'm2', type: 'image', dataUrl: null, caption: '7회 응원', overlay: { text: '역전!!', x: 50, y: 70, size: 'large' } },
-    ],
-    createdAt: '2026-04-03T21:10:00',
-  },
-  {
-    id: 'seed-2',
-    date: '2026-04-07',
-    opponent: 'SSG 랜더스',
-    venue: '잠실 야구장',
-    memo: '비 속에서도 끝까지. 우산보다 응원봉.',
-    teamColor: '#003087',
-    media: [
-      { id: 'm3', type: 'image', dataUrl: null, caption: '빗속 경기', overlay: null },
-    ],
-    createdAt: '2026-04-07T22:00:00',
-  },
-  {
-    id: 'seed-3',
-    date: '2026-03-29',
-    opponent: 'KT 위즈',
-    venue: '잠실 야구장',
-    memo: '개막전. 이 순간을 1년 내내 기다렸다.',
-    teamColor: '#003087',
-    media: [
-      { id: 'm4', type: 'image', dataUrl: null, caption: '개막전 입장', overlay: { text: '2026 개막', x: 50, y: 20, size: 'medium' } },
-      { id: 'm5', type: 'image', dataUrl: null, caption: '불꽃놀이', overlay: null },
-    ],
-    createdAt: '2026-03-29T19:30:00',
-  },
-]
 
 const INITIAL_USER = {
   name: '',
@@ -119,7 +79,7 @@ function reducer(state, action) {
 
 const INITIAL_STATE = {
   user: INITIAL_USER,
-  logs: SEED_LOGS,
+  logs: [],
 }
 
 /* ─── Context ────────────────────────────────────────────────────────── */
@@ -134,6 +94,10 @@ export function AppProvider({ children }) {
     if (saved) {
       try {
         const parsed = JSON.parse(saved)
+        // 예시 데이터(seed-)로 시작하는 id 제거
+        if (parsed.logs) {
+          parsed.logs = parsed.logs.filter(l => !l.id.startsWith('seed-'))
+        }
         dispatch({ type: 'HYDRATE', payload: parsed })
       } catch (_) {
         // ignore corrupt data
