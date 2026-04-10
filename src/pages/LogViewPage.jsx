@@ -21,7 +21,7 @@ function MediaItemView({ item, idx, activeIdx }) {
           <img src={mediaSrc} alt={item.caption || ''} className="log-view__media-img" />
         )}
         {mediaSrc && item.type === 'video' && (
-          <video src={mediaSrc} className="log-view__media-img" muted playsInline loop autoPlay />
+          <video key={mediaSrc} src={mediaSrc} className="log-view__media-img" muted playsInline loop autoPlay preload="auto" />
         )}
 
         <div className="log-view__media-gradient" />

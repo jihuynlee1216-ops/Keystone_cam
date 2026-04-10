@@ -45,9 +45,10 @@ function SlideFrame({ item, phase, currentIdx, total }) {
       )}
       {mediaSrc && item.type === 'video' && (
         <video
+          key={mediaSrc}
           src={mediaSrc}
           className="slideshow__img"
-          muted playsInline loop autoPlay
+          muted playsInline loop autoPlay preload="auto"
         />
       )}
 

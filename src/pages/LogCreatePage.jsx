@@ -54,7 +54,7 @@ function MediaEditorCard({ item, onUpdate, onRemove, isActive }) {
           <img src={mediaSrc} alt="" className="media-editor-card__img" />
         )}
         {mediaSrc && item.type === 'video' && (
-          <video src={mediaSrc} className="media-editor-card__img" muted playsInline loop autoPlay />
+          <video key={mediaSrc} src={mediaSrc} className="media-editor-card__img" muted playsInline loop autoPlay preload="auto" />
         )}
 
         {!mediaSrc && (
