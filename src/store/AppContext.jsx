@@ -110,14 +110,17 @@ export function AppProvider({ children }) {
     try {
       localStorage.setItem('sports-archive-state', JSON.stringify(state))
     } catch (e) {
-      // QuotaExceededError: 사진 용량 초과 시 미디어 없이 저장 시도
+      // QuotaExceededError: 미디어는 IndexedDB에 있으므로 dataUrl만 제거 후 재시도
       try {
         const fallback = {
           ...state,
-          logs: state.logs.map(l => ({ ...l, media: [] })),
+          logs: state.logs.map(l => ({
+            ...l,
+            media: (l.media || []).map(m => ({ ...m, dataUrl: null })),
+          })),
         }
         localStorage.setItem('sports-archive-state', JSON.stringify(fallback))
-        console.warn('저장 용량 초과 - 미디어 제외 후 저장됨')
+        console.warn('localStorage 용량 초과 - dataUrl 제거 후 저장됨')
       } catch (_) {
         console.error('localStorage 저장 실패:', e)
       }

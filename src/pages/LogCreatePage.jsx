@@ -179,62 +179,55 @@ export default function LogCreatePage() {
     year: 'numeric', month: 'long', day: 'numeric', weekday: 'short',
   })
 
-  const compressImage = (dataUrl, maxDim = 1200, quality = 0.82) =>
+  const compressToBlob = (file, maxDim = 1200, quality = 0.82) =>
     new Promise((resolve) => {
-      const img = new Image()
-      img.onload = () => {
-        let { width, height } = img
-        if (width > maxDim || height > maxDim) {
-          if (width > height) { height = Math.round(height * maxDim / width); width = maxDim }
-          else                { width  = Math.round(width  * maxDim / height); height = maxDim }
+      const reader = new FileReader()
+      reader.onload = (ev) => {
+        const img = new Image()
+        img.onload = () => {
+          let { width, height } = img
+          if (width > maxDim || height > maxDim) {
+            if (width > height) { height = Math.round(height * maxDim / width); width = maxDim }
+            else                { width  = Math.round(width  * maxDim / height); height = maxDim }
+          }
+          const canvas = document.createElement('canvas')
+          canvas.width  = width
+          canvas.height = height
+          canvas.getContext('2d').drawImage(img, 0, 0, width, height)
+          canvas.toBlob(blob => resolve(blob || file), 'image/jpeg', quality)
         }
-        const canvas = document.createElement('canvas')
-        canvas.width  = width
-        canvas.height = height
-        canvas.getContext('2d').drawImage(img, 0, 0, width, height)
-        resolve(canvas.toDataURL('image/jpeg', quality))
+        img.onerror = () => resolve(file)
+        img.src = ev.target.result
       }
-      img.onerror = () => resolve(dataUrl) // 실패 시 원본 유지
-      img.src = dataUrl
+      reader.onerror = () => resolve(file)
+      reader.readAsDataURL(file)
     })
 
   const handleFileChange = (e) => {
     const files = Array.from(e.target.files || [])
     files.forEach((file) => {
       const isVideo = file.type.startsWith('video') || file.name?.match(/\.(mp4|mov|avi|webm|mkv)$/i)
+      const mediaId = generateId()
+      const tempUrl = URL.createObjectURL(file)
+      const item = {
+        id: generateId(),
+        type: isVideo ? 'video' : 'image',
+        dataUrl: tempUrl,  // 현재 세션 미리보기용
+        mediaId,
+        caption: '',
+        overlay: null,
+      }
+      setMedia(prev => [...prev, item])
 
       if (isVideo) {
-        const mediaId = generateId()
-        const tempUrl = URL.createObjectURL(file) // 현재 세션 미리보기용
-        const item = {
-          id: generateId(),
-          type: 'video',
-          dataUrl: tempUrl,
-          mediaId,
-          caption: '',
-          overlay: null,
-        }
-        // 먼저 UI에 추가한 뒤 IndexedDB에 저장 (UI 블로킹 방지)
-        setMedia(prev => [...prev, item])
         putMedia(mediaId, file)
           .then(() => { dbSavedIds.current.add(mediaId) })
-          .catch(err => {
-            console.warn('영상 IndexedDB 저장 실패:', err)
-          })
+          .catch(err => { console.warn('영상 IndexedDB 저장 실패:', err) })
       } else {
-        const reader = new FileReader()
-        reader.onload = async (ev) => {
-          const dataUrl = await compressImage(ev.target.result)
-          const item = {
-            id: generateId(),
-            type: 'image',
-            dataUrl,
-            caption: '',
-            overlay: null,
-          }
-          setMedia(prev => [...prev, item])
-        }
-        reader.readAsDataURL(file)
+        compressToBlob(file)
+          .then(blob => putMedia(mediaId, blob))
+          .then(() => { dbSavedIds.current.add(mediaId) })
+          .catch(err => { console.warn('사진 IndexedDB 저장 실패:', err) })
       }
     })
     e.target.value = ''
