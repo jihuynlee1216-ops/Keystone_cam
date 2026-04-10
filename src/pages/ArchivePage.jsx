@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useApp } from '../store/AppContext.jsx'
+import { useMediaSrc } from '../hooks/useMediaSrc.js'
 import BottomNav from '../components/BottomNav.jsx'
 import './ArchivePage.css'
 
@@ -15,9 +16,28 @@ const PLACEHOLDER_GRADIENTS = [
 
 const VIEWS = ['grid', 'feed']
 
+function ThumbMedia({ item, className }) {
+  const src = useMediaSrc(item)
+  if (!src) return null
+  if (item.type === 'video') {
+    return (
+      <video
+        key={src}
+        src={src}
+        className={className}
+        muted
+        playsInline
+        preload="metadata"
+      />
+    )
+  }
+  return <img src={src} alt="" className={className} />
+}
+
 function LogGridCard({ log, onClick }) {
-  const thumb  = log.media?.[0]?.dataUrl
-  const bg     = !thumb
+  const firstMedia = log.media?.[0]
+  const hasSrc     = !!(firstMedia?.dataUrl || firstMedia?.mediaId)
+  const bg         = !hasSrc
     ? PLACEHOLDER_GRADIENTS[log.id.charCodeAt(log.id.length - 1) % PLACEHOLDER_GRADIENTS.length]
     : undefined
 
@@ -28,8 +48,8 @@ function LogGridCard({ log, onClick }) {
   return (
     <button className="archive-grid-card" onClick={onClick}>
       <div className="archive-grid-card__media" style={{ background: bg }}>
-        {thumb && (
-          <img src={thumb} alt="" className="archive-grid-card__img" />
+        {firstMedia && (
+          <ThumbMedia item={firstMedia} className="archive-grid-card__img" />
         )}
         <div className="archive-grid-card__overlay" />
         <div className="archive-grid-card__date">
@@ -45,8 +65,9 @@ function LogGridCard({ log, onClick }) {
 }
 
 function LogFeedCard({ log, onClick }) {
-  const thumb  = log.media?.[0]?.dataUrl
-  const bg     = !thumb
+  const firstMedia = log.media?.[0]
+  const hasSrc     = !!(firstMedia?.dataUrl || firstMedia?.mediaId)
+  const bg         = !hasSrc
     ? PLACEHOLDER_GRADIENTS[log.id.charCodeAt(log.id.length - 1) % PLACEHOLDER_GRADIENTS.length]
     : undefined
 
@@ -59,8 +80,8 @@ function LogFeedCard({ log, onClick }) {
   return (
     <button className="archive-feed-card" onClick={onClick}>
       <div className="archive-feed-card__media-wrap" style={{ background: bg }}>
-        {thumb && (
-          <img src={thumb} alt="" className="archive-feed-card__img" />
+        {firstMedia && (
+          <ThumbMedia item={firstMedia} className="archive-feed-card__img" />
         )}
         <div className="archive-feed-card__media-overlay" />
 

@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useApp, getLogsForMonth, getLogByDate } from '../store/AppContext.jsx'
+import { useMediaSrc } from '../hooks/useMediaSrc.js'
 import BottomNav from '../components/BottomNav.jsx'
 import BaseballCharacter from '../components/BaseballCharacter.jsx'
 import './CalendarPage.css'
@@ -23,6 +24,56 @@ function buildCalendar(year, month) {
 
 function formatDate(year, month, day) {
   return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+}
+
+function CalendarCell({ day, dateStr, logs, hasLogs, todayFlag, isSun, isSat, viewMonth, onClick }) {
+  const firstMediaItem = logs[0]?.media?.[0]
+  const thumbSrc = useMediaSrc(firstMediaItem)
+
+  return (
+    <button
+      className={[
+        'calendar-cell',
+        hasLogs   ? 'has-log'  : '',
+        todayFlag ? 'is-today' : '',
+        isSun     ? 'is-sun'   : '',
+        isSat     ? 'is-sat'   : '',
+      ].filter(Boolean).join(' ')}
+      onClick={onClick}
+      aria-label={`${viewMonth}월 ${day}일${hasLogs ? ', 기록 있음' : ''}`}
+    >
+      {/* Thumbnail background for days with logs */}
+      {thumbSrc && firstMediaItem?.type === 'video' ? (
+        <video
+          key={thumbSrc}
+          src={thumbSrc}
+          className="calendar-cell__thumb"
+          muted
+          playsInline
+          preload="metadata"
+          aria-hidden="true"
+        />
+      ) : thumbSrc ? (
+        <img src={thumbSrc} alt="" className="calendar-cell__thumb" aria-hidden="true" />
+      ) : null}
+
+      {/* Date number */}
+      <span className="calendar-cell__day">{day}</span>
+
+      {/* Indicator dots */}
+      {hasLogs && !thumbSrc && (
+        <div className="calendar-cell__dots">
+          {logs.slice(0, 3).map(l => (
+            <span key={l.id} className="calendar-cell__dot" />
+          ))}
+        </div>
+      )}
+
+      {hasLogs && thumbSrc && (
+        <div className="calendar-cell__overlay-badge" />
+      )}
+    </button>
+  )
 }
 
 export default function CalendarPage() {
@@ -118,45 +169,23 @@ export default function CalendarPage() {
           const dateStr  = formatDate(viewYear, viewMonth, day)
           const hasLogs  = !!logsByDate[dateStr]
           const logs     = logsByDate[dateStr] || []
-          const thumb    = logs[0]?.media?.[0]?.dataUrl
           const todayFlag = isToday(day)
           const isSun    = idx % 7 === 0
           const isSat    = idx % 7 === 6
 
           return (
-            <button
+            <CalendarCell
               key={dateStr}
-              className={[
-                'calendar-cell',
-                hasLogs   ? 'has-log'  : '',
-                todayFlag ? 'is-today' : '',
-                isSun     ? 'is-sun'   : '',
-                isSat     ? 'is-sat'   : '',
-              ].filter(Boolean).join(' ')}
+              day={day}
+              dateStr={dateStr}
+              logs={logs}
+              hasLogs={hasLogs}
+              todayFlag={todayFlag}
+              isSun={isSun}
+              isSat={isSat}
+              viewMonth={viewMonth}
               onClick={() => handleDayTap(day)}
-              aria-label={`${viewMonth}월 ${day}일${hasLogs ? ', 기록 있음' : ''}`}
-            >
-              {/* Thumbnail background for days with logs */}
-              {thumb && (
-                <img src={thumb} alt="" className="calendar-cell__thumb" aria-hidden="true" />
-              )}
-
-              {/* Date number */}
-              <span className="calendar-cell__day">{day}</span>
-
-              {/* Indicator dots */}
-              {hasLogs && !thumb && (
-                <div className="calendar-cell__dots">
-                  {logs.slice(0, 3).map(l => (
-                    <span key={l.id} className="calendar-cell__dot" />
-                  ))}
-                </div>
-              )}
-
-              {hasLogs && thumb && (
-                <div className="calendar-cell__overlay-badge" />
-              )}
-            </button>
+            />
           )
         })}
       </div>
