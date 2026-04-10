@@ -1,0 +1,304 @@
+.log-view {
+  min-height: 100dvh;
+  background: #0a0a0a;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+/* ─── Floating Nav Buttons ───────────────────────────────────────────── */
+.log-view__back-btn,
+.log-view__options-btn {
+  position: fixed;
+  top: calc(var(--safe-top) + 14px);
+  z-index: 200;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: rgba(0,0,0,0.40);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #FFFFFF;
+  transition: background var(--transition-base), transform var(--transition-spring);
+}
+
+.log-view__back-btn    { left: 16px; }
+.log-view__options-btn { right: 16px; }
+
+.log-view__back-btn:active,
+.log-view__options-btn:active {
+  background: rgba(0,0,0,0.65);
+  transform: scale(0.90);
+}
+
+/* ─── Media ──────────────────────────────────────────────────────────── */
+.log-view__media-wrap {
+  position: relative;
+  flex: 1;
+}
+
+.log-view__media-scroll {
+  display: flex;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  height: 72dvh;
+  -webkit-overflow-scrolling: touch;
+}
+
+.log-view__media-item {
+  flex-shrink: 0;
+  width: 100dvw;
+  max-width: var(--app-max-width);
+  height: 100%;
+  scroll-snap-align: start;
+}
+
+.log-view__media-bg {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  overflow: hidden;
+}
+
+.log-view__media-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.log-view__media-gradient {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    to bottom,
+    rgba(0,0,0,0.15) 0%,
+    transparent 30%,
+    transparent 55%,
+    rgba(0,0,0,0.55) 100%
+  );
+  pointer-events: none;
+}
+
+.log-view__overlay-text {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  color: #FFFFFF;
+  font-weight: 600;
+  text-shadow: 0 2px 10px rgba(0,0,0,0.6);
+  white-space: pre-line;
+  text-align: center;
+  pointer-events: none;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+  max-width: 80%;
+}
+
+.log-view__media-caption {
+  position: absolute;
+  bottom: 20px;
+  left: 20px;
+  right: 20px;
+  font-size: 13px;
+  font-weight: 300;
+  color: rgba(255,255,255,0.75);
+  text-shadow: 0 1px 4px rgba(0,0,0,0.4);
+  letter-spacing: 0.02em;
+}
+
+/* ─── Story progress ─────────────────────────────────────────────────── */
+.log-view__story-bar {
+  position: absolute;
+  top: calc(var(--safe-top) + 64px);
+  left: 16px;
+  right: 16px;
+  display: flex;
+  gap: 4px;
+  z-index: 100;
+}
+
+.log-view__story-seg {
+  flex: 1;
+  height: 2px;
+  border-radius: 1px;
+  background: rgba(255,255,255,0.30);
+  transition: background var(--transition-slow);
+}
+
+.log-view__story-seg.done,
+.log-view__story-seg.active {
+  background: rgba(255,255,255,0.90);
+}
+
+/* ─── No media ───────────────────────────────────────────────────────── */
+.log-view__no-media {
+  height: 45dvh;
+  background: linear-gradient(145deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+}
+
+/* ─── Info card ──────────────────────────────────────────────────────── */
+.log-view__info-card {
+  background: var(--color-bg);
+  border-radius: 28px 28px 0 0;
+  padding: 24px 24px 40px;
+  margin-top: -20px;
+  position: relative;
+  z-index: 10;
+  flex: 1;
+  min-height: 0;
+}
+
+.log-view__info-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.log-view__date {
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  color: var(--color-text-tertiary);
+  margin-bottom: 4px;
+}
+
+.log-view__opponent {
+  font-size: 17px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  color: var(--color-text-primary);
+}
+
+.log-view__venue {
+  font-size: 14px;
+  font-weight: 300;
+  color: var(--color-text-tertiary);
+}
+
+.log-view__edit-btn {
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--color-accent);
+  padding: 4px 0;
+  flex-shrink: 0;
+  transition: opacity var(--transition-base);
+}
+
+.log-view__edit-btn:active {
+  opacity: 0.6;
+}
+
+.log-view__memo {
+  font-size: 15px;
+  font-weight: 300;
+  color: var(--color-text-secondary);
+  line-height: 1.75;
+  letter-spacing: -0.005em;
+}
+
+/* ─── Empty state ────────────────────────────────────────────────────── */
+.log-view--empty {
+  background: var(--color-bg);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+
+.log-view__empty-msg {
+  font-size: 16px;
+  font-weight: 300;
+  color: var(--color-text-secondary);
+}
+
+.log-view__create-link {
+  font-size: 14px;
+  color: var(--color-accent);
+}
+
+/* ─── Bottom sheet ───────────────────────────────────────────────────── */
+.log-view__overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.45);
+  z-index: 300;
+  display: flex;
+  align-items: flex-end;
+  animation: fadeIn 200ms ease both;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.log-view__sheet {
+  width: 100%;
+  max-width: var(--app-max-width);
+  margin: 0 auto;
+  background: var(--color-surface);
+  border-radius: 24px 24px 0 0;
+  padding: 12px 20px calc(32px + var(--safe-bottom));
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  animation: slideUp 280ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+@keyframes slideUp {
+  from { transform: translateY(100%); }
+  to   { transform: translateY(0); }
+}
+
+.log-view__sheet-handle {
+  width: 36px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--color-border);
+  margin: 0 auto 16px;
+}
+
+.log-view__sheet-title {
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  text-align: center;
+  margin-bottom: 4px;
+}
+
+.log-view__sheet-desc {
+  font-size: 13px;
+  font-weight: 300;
+  color: var(--color-text-tertiary);
+  text-align: center;
+  margin-bottom: 12px;
+}
+
+.log-view__sheet-btn {
+  width: 100%;
+  padding: 16px;
+  border-radius: var(--radius-lg);
+  font-size: 15px;
+  font-weight: 500;
+  transition: opacity var(--transition-base), transform var(--transition-spring);
+}
+
+.log-view__sheet-btn:active {
+  opacity: 0.8;
+  transform: scale(0.98);
+}
+
+.log-view__sheet-btn--delete {
+  background: #FEE8E8;
+  color: #D93535;
+}
+
+.log-view__sheet-btn--cancel {
+  background: var(--color-surface-alt);
+  color: var(--color-text-secondary);
+}

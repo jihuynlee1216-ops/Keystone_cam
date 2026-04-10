@@ -1,0 +1,48 @@
+.media-card {
+  position: relative;
+  width: 100%;
+  flex-shrink: 0;
+  scroll-snap-align: start;
+}
+
+.media-card__media {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 4 / 5;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  background: var(--color-surface-alt);
+}
+
+.media-card__img,
+.media-card__video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.media-card__overlay-text {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  color: #FFFFFF;
+  font-weight: 600;
+  text-shadow: 0 2px 8px rgba(0,0,0,0.5);
+  white-space: pre-line;
+  text-align: center;
+  pointer-events: none;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+  max-width: 80%;
+}
+
+.media-card__caption {
+  position: absolute;
+  bottom: 16px;
+  left: 16px;
+  right: 16px;
+  font-size: 12px;
+  font-weight: 400;
+  color: rgba(255, 255, 255, 0.80);
+  text-shadow: 0 1px 4px rgba(0,0,0,0.4);
+  letter-spacing: 0.02em;
+}
