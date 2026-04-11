@@ -204,15 +204,15 @@ function drawSlideToCanvas(ctx, W, H, img, item) {
   }
 }
 
-/* ─── Save helper ────────────────────────────────────────────────────── */
-async function saveVideo(logs, titleText, onProgress) {
+/* ─── Blob builder (heavy async work — call during "generate") ───────── */
+async function buildBlob(logs, titleText, onProgress) {
   const allMedia = logs
     .flatMap(log =>
       (log.media || []).map(m => ({ ...m, logDate: log.date }))
     )
     .slice(0, 12)
 
-  if (allMedia.length === 0) return 'no-media'
+  if (allMedia.length === 0) return null
 
   const W = 390, H = 690
   const canvas = document.createElement('canvas')
@@ -256,7 +256,6 @@ async function saveVideo(logs, titleText, onProgress) {
             clearTimeout(timer)
             resolve(val)
           }
-          // 5초 내 캡처 못하면 null로 처리
           const timer = setTimeout(() => settle(null), 5000)
 
           const captureFrame = () => {
@@ -274,16 +273,10 @@ async function saveVideo(logs, titleText, onProgress) {
             }
           }
 
-          // 메타데이터 로드 후 첫 프레임으로 seek
           vid.onloadedmetadata = () => { vid.currentTime = 0.1 }
-          // seek 완료 후 프레임 캡처 (가장 안정적)
           vid.onseeked = captureFrame
-          // onseeked가 발화하지 않는 브라우저(iOS Safari 등) 대비
-          // seekable 여부와 무관하게 loadeddata 이후 일정 시간 후 캡처
           vid.onloadeddata = () => {
-            setTimeout(() => {
-              if (!settled) captureFrame()
-            }, 200)
+            setTimeout(() => { if (!settled) captureFrame() }, 200)
           }
           vid.onerror = () => settle(null)
           vid.src = src
@@ -307,31 +300,12 @@ async function saveVideo(logs, titleText, onProgress) {
     (MediaRecorder.isTypeSupported('video/webm;codecs=vp8') ||
      MediaRecorder.isTypeSupported('video/webm'))
 
-  // ── iOS / no-recorder fallback: share/download as PNG ──
+  // ── iOS / no-recorder fallback: PNG ──
   if (!canRecord) {
     drawSlideToCanvas(ctx, W, H, loadedImages[0] || null, allMedia[0])
     const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'))
-    const file = new File([blob], `${titleText}.png`, { type: 'image/png' })
     cleanup()
-
-    if (navigator.canShare && navigator.canShare({ files: [file] })) {
-      try {
-        await navigator.share({ files: [file], title: titleText })
-        return 'saved'
-      } catch (err) {
-        if (err.name === 'AbortError') return 'saved' // 사용자가 취소
-        // 다른 오류 → 다운로드 폴백
-      }
-    }
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `${titleText}.png`
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-    URL.revokeObjectURL(url)
-    return 'saved'
+    return { blob, fileName: `${titleText}.png` }
   }
 
   // ── Canvas recording (Chrome / Android) ──
@@ -339,18 +313,14 @@ async function saveVideo(logs, titleText, onProgress) {
     ? 'video/webm;codecs=vp8'
     : 'video/webm'
 
-  // captureStream(30): 30fps 자동 캡처 → 각 슬라이드가 정확히 동일한 프레임 수를 가짐
-  // captureStream(0) + requestFrame()은 JS 타이머 편차로 슬라이드별 시간 비율이 불균등해짐
   const stream   = canvas.captureStream(30)
   const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 2_000_000 })
   const chunks   = []
   recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data) }
 
-  // 첫 프레임 미리 그려두고 녹화 시작 (시작 부분 검은 화면 방지)
   drawSlideToCanvas(ctx, W, H, loadedImages[0], allMedia[0])
   recorder.start(200)
 
-  // 각 슬라이드를 SLIDE_MS 동안 표시 — captureStream(30)이 자동으로 균등하게 캡처
   const SLIDE_MS = 2000
   for (let i = 0; i < allMedia.length; i++) {
     onProgress?.(i, allMedia.length)
@@ -358,10 +328,8 @@ async function saveVideo(logs, titleText, onProgress) {
     await new Promise(r => setTimeout(r, SLIDE_MS))
   }
 
-  // 마지막 슬라이드 프레임이 인코더에 완전히 반영되도록 여유 시간 확보
   await new Promise(r => setTimeout(r, 300))
 
-  // recorder.stop() → onstop 대기 (onerror / 5초 타임아웃으로 무한 대기 방지)
   await new Promise(resolve => {
     let settled = false
     const finish = () => { if (!settled) { settled = true; resolve() } }
@@ -374,38 +342,27 @@ async function saveVideo(logs, titleText, onProgress) {
 
   const blob = new Blob(chunks, { type: 'video/webm' })
 
-  // 녹화된 데이터가 너무 작으면(인코딩 실패) PNG 폴백
+  // 녹화 데이터가 너무 작으면(인코딩 실패) PNG 폴백
   if (blob.size < 1000) {
     drawSlideToCanvas(ctx, W, H, loadedImages[0] || null, allMedia[0])
     const pngBlob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'))
-    const pngFile = new File([pngBlob], `${titleText}.png`, { type: 'image/png' })
-    if (navigator.canShare && navigator.canShare({ files: [pngFile] })) {
-      try { await navigator.share({ files: [pngFile], title: titleText }); return 'saved' }
-      catch (err) { if (err.name === 'AbortError') return 'saved' }
-    }
-    const pu = URL.createObjectURL(pngBlob)
-    const pa = document.createElement('a')
-    pa.href = pu; pa.download = `${titleText}.png`
-    document.body.appendChild(pa); pa.click()
-    document.body.removeChild(pa); URL.revokeObjectURL(pu)
-    return 'saved'
+    return { blob: pngBlob, fileName: `${titleText}.png` }
   }
 
-  const fileName = `${titleText}.webm`
-  const file = new File([blob], fileName, { type: 'video/webm' })
+  return { blob, fileName: `${titleText}.webm` }
+}
 
-  // 갤러리 저장: Web Share API로 파일 공유 (Android/iOS 갤러리에 직접 저장 가능)
+/* ─── Share/download trigger (must be called synchronously from click) ── */
+// iOS는 await 이후에 navigator.share() 호출하면 user gesture 만료로 실패함.
+// blob을 미리 만들어두고, 클릭 핸들러에서 await 없이 즉시 호출해야 함.
+function triggerSave(blob, fileName, titleText) {
+  const file = new File([blob], fileName, { type: blob.type })
+
   if (navigator.canShare && navigator.canShare({ files: [file] })) {
-    try {
-      await navigator.share({ files: [file], title: titleText })
-      return 'saved'
-    } catch (err) {
-      if (err.name === 'AbortError') return 'saved' // 사용자가 취소
-      // 다른 오류 → 다운로드 폴백
-    }
+    return navigator.share({ files: [file], title: titleText })
   }
 
-  // 폴백: 브라우저 다운로드
+  // 폴백: 브라우저 다운로드 (Android Chrome / 데스크탑)
   const url = URL.createObjectURL(blob)
   const a   = document.createElement('a')
   a.href = url
@@ -413,8 +370,8 @@ async function saveVideo(logs, titleText, onProgress) {
   document.body.appendChild(a)
   a.click()
   document.body.removeChild(a)
-  URL.revokeObjectURL(url)
-  return 'saved'
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
+  return Promise.resolve()
 }
 
 /* ─── Page ───────────────────────────────────────────────────────────── */
@@ -429,6 +386,7 @@ export default function VideoPreviewPage() {
   const [generated, setGenerated]                   = useState(false)
   const [saveStatus, setSaveStatus]                 = useState(null) // null | 'saving' | 'saved' | 'error'
   const [saveProgress, setSaveProgress]             = useState(null) // { cur, total }
+  const [readyBlob, setReadyBlob]                   = useState(null) // { blob, fileName } — 미리 생성한 blob
 
   const now          = new Date()
   const currentYear  = now.getFullYear()
@@ -443,25 +401,44 @@ export default function VideoPreviewPage() {
     ? `${currentMon}월의 경기 ${relevantLogs.length}개`
     : `${currentYear} 시즌 총 ${relevantLogs.length}경기`
 
-  const handleGenerate = () => {
+  // "영상 생성하기" 클릭 → 실제로 blob을 만들어 readyBlob에 저장
+  const handleGenerate = async () => {
     setGenerating(true)
-    setTimeout(() => { setGenerating(false); setGenerated(true) }, 2400)
-  }
-
-  const handleSave = async () => {
-    setSaveStatus('saving')
+    setReadyBlob(null)
     setSaveProgress(null)
     try {
-      await saveVideo(relevantLogs, titleText, (cur, total) => {
+      const result = await buildBlob(relevantLogs, titleText, (cur, total) => {
         setSaveProgress({ cur: cur + 1, total })
       })
-      setSaveStatus('saved')
-      setTimeout(() => setSaveStatus(null), 3000)
+      setReadyBlob(result)   // null이면 미디어 없는 것
+      setGenerated(true)
     } catch (err) {
       console.error(err)
-      setSaveStatus('error')
-      setTimeout(() => setSaveStatus(null), 3000)
+    } finally {
+      setGenerating(false)
+      setSaveProgress(null)
     }
+  }
+
+  // "저장하기" 클릭 → await 없이 즉시 triggerSave 호출 (iOS user gesture 유지)
+  const handleSave = () => {
+    if (!readyBlob) return
+    setSaveStatus('saving')
+    triggerSave(readyBlob.blob, readyBlob.fileName, titleText)
+      .then(() => {
+        setSaveStatus('saved')
+        setTimeout(() => setSaveStatus(null), 3000)
+      })
+      .catch(err => {
+        if (err.name === 'AbortError') {
+          // 사용자가 공유 시트에서 취소 → 저장 안 된 것
+          setSaveStatus(null)
+          return
+        }
+        console.error(err)
+        setSaveStatus('error')
+        setTimeout(() => setSaveStatus(null), 3000)
+      })
   }
 
   const saveLabel = () => {
@@ -554,7 +531,9 @@ export default function VideoPreviewPage() {
             {generating ? (
               <>
                 <span className="video-preview-generate-btn__spinner" />
-                영상 생성 중...
+                {saveProgress
+                  ? `생성 중... ${saveProgress.cur}/${saveProgress.total}`
+                  : '영상 생성 중...'}
               </>
             ) : (
               '영상 생성하기'
@@ -575,7 +554,7 @@ export default function VideoPreviewPage() {
               <button
                 className={`video-preview-done__btn video-preview-done__btn--save ${saveStatus ? saveStatus : ''}`}
                 onClick={handleSave}
-                disabled={saveStatus === 'saving'}
+                disabled={saveStatus === 'saving' || !readyBlob}
               >
                 {saveStatus === 'saving' && (
                   <span className="video-preview-done__btn-spinner" />
@@ -584,7 +563,7 @@ export default function VideoPreviewPage() {
               </button>
               <button
                 className="video-preview-done__btn video-preview-done__btn--reset"
-                onClick={() => { setGenerated(false); setSaveStatus(null) }}
+                onClick={() => { setGenerated(false); setSaveStatus(null); setReadyBlob(null) }}
               >
                 다시 만들기
               </button>
