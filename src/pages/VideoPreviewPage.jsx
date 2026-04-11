@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { useApp } from '../store/AppContext.jsx'
 import { useMediaSrc } from '../hooks/useMediaSrc.js'
 import { getMedia } from '../store/mediaDB'
+import GIF from 'gif.js'
 import BaseballCharacter from '../components/BaseballCharacter.jsx'
 import BottomNav from '../components/BottomNav.jsx'
 import './VideoPreviewPage.css'
@@ -301,77 +302,40 @@ async function saveVideo(logs, titleText, onProgress) {
 
   const cleanup = () => blobUrls.forEach(u => URL.revokeObjectURL(u))
 
-  const canRecord =
-    typeof MediaRecorder !== 'undefined' &&
-    typeof canvas.captureStream === 'function' &&
-    (MediaRecorder.isTypeSupported('video/webm;codecs=vp8') ||
-     MediaRecorder.isTypeSupported('video/webm'))
+  // ── GIF 생성 (모든 기기에서 동작) ──
+  const SLIDE_DELAY = 2000 // 각 슬라이드 표시 시간 (ms)
 
-  // ── iOS / no-recorder fallback: share/download as PNG ──
-  if (!canRecord) {
-    drawSlideToCanvas(ctx, W, H, loadedImages[0] || null, allMedia[0])
-    const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'))
-    const file = new File([blob], `${titleText}.png`, { type: 'image/png' })
-    cleanup()
+  const gif = new GIF({
+    workers: 2,
+    quality: 10,
+    width: W,
+    height: H,
+    workerScript: '/gif.worker.js',
+  })
 
-    if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
-      try {
-        await navigator.share({ files: [file], title: titleText })
-      } catch (e) { if (e.name !== 'AbortError') throw e }
-      return 'saved'
-    }
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `${titleText}.png`
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-    URL.revokeObjectURL(url)
-    return 'saved'
-  }
-
-  // ── Canvas recording (Chrome / Android) ──
-  const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp8')
-    ? 'video/webm;codecs=vp8'
-    : 'video/webm'
-
-  const FPS = 30
-  const FRAME_MS = 1000 / FPS
-  const SLIDE_MS = 2000
-  const FRAMES_PER_SLIDE = Math.round(SLIDE_MS / FRAME_MS)
-
-  const stream   = canvas.captureStream(0)
-  const videoTrack = stream.getVideoTracks()[0]
-  const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 2_000_000 })
-  const chunks   = []
-  recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data) }
-
-  // 첫 프레임 미리 그려두고 녹화 시작
-  drawSlideToCanvas(ctx, W, H, loadedImages[0], allMedia[0])
-  if (videoTrack.requestFrame) videoTrack.requestFrame()
-  recorder.start(200)
-
-  // 각 슬라이드를 정확히 FRAMES_PER_SLIDE 프레임만큼 기록 → 균등 시간 보장
+  // 각 슬라이드를 캔버스에 그리고 GIF 프레임으로 추가
   for (let i = 0; i < allMedia.length; i++) {
     onProgress?.(i, allMedia.length)
     drawSlideToCanvas(ctx, W, H, loadedImages[i], allMedia[i])
-
-    for (let f = 0; f < FRAMES_PER_SLIDE; f++) {
-      if (videoTrack.requestFrame) videoTrack.requestFrame()
-      await new Promise(r => setTimeout(r, FRAME_MS))
-    }
+    // 캔버스 픽셀을 복사해서 프레임 추가 (각 슬라이드 동일 시간)
+    const frameData = ctx.getImageData(0, 0, W, H)
+    gif.addFrame(frameData, { delay: SLIDE_DELAY, copy: true })
   }
 
-  await new Promise(resolve => { recorder.onstop = resolve; recorder.stop() })
+  // GIF 렌더링 완료 대기
+  const blob = await new Promise((resolve, reject) => {
+    gif.on('finished', resolve)
+    gif.on('error', reject)
+    gif.render()
+  })
+
   cleanup()
 
-  const blob = new Blob(chunks, { type: 'video/webm' })
-  const filename = `${titleText}.webm`
+  const filename = `${titleText}.gif`
 
-  // navigator.share로 기기에 직접 저장 (iOS/Android 공유 시트)
+  // navigator.share로 기기에 직접 저장 (iOS 사진앱 / Android 갤러리)
   if (navigator.share && navigator.canShare) {
-    const file = new File([blob], filename, { type: 'video/webm' })
+    const file = new File([blob], filename, { type: 'image/gif' })
     if (navigator.canShare({ files: [file] })) {
       try {
         await navigator.share({ files: [file], title: titleText })
