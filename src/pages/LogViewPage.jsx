@@ -113,25 +113,34 @@ export default function LogViewPage() {
   const handleDownload = useCallback(async (item) => {
     try {
       let blob
-      // IndexedDB에 저장된 미디어면 blob 로드
+
+      // 1) IndexedDB에서 blob 로드
       if (item.mediaId) {
         blob = await getMedia(item.mediaId)
       }
-      // dataUrl이 base64면 fetch로 blob 변환
-      if (!blob && item.dataUrl && item.dataUrl.startsWith('data:')) {
+
+      // 2) dataUrl 폴백 (base64 또는 blob URL)
+      if (!blob && item.dataUrl) {
         const res = await fetch(item.dataUrl)
         blob = await res.blob()
       }
-      // dataUrl이 blob URL이면 fetch
-      if (!blob && item.dataUrl && item.dataUrl.startsWith('blob:')) {
-        const res = await fetch(item.dataUrl)
-        blob = await res.blob()
-      }
+
       if (!blob) return
 
       const ext = item.type === 'video' ? 'mp4' : 'jpg'
+      const mimeType = item.type === 'video' ? 'video/mp4' : 'image/jpeg'
       const filename = `직관기록_${log.date}_${Date.now()}.${ext}`
 
+      // iOS/모바일: navigator.share로 기기에 직접 저장 (사진 앱 저장 가능)
+      if (navigator.share && navigator.canShare) {
+        const file = new File([blob], filename, { type: mimeType })
+        if (navigator.canShare({ files: [file] })) {
+          await navigator.share({ files: [file] })
+          return
+        }
+      }
+
+      // 데스크톱 폴백: <a download>
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
@@ -141,6 +150,8 @@ export default function LogViewPage() {
       document.body.removeChild(a)
       URL.revokeObjectURL(url)
     } catch (err) {
+      // 사용자가 share 취소한 경우 무시
+      if (err.name === 'AbortError') return
       console.warn('다운로드 실패:', err)
     }
   }, [log])
