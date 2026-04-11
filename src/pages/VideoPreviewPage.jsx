@@ -50,6 +50,7 @@ function SlideFrame({ item, phase, currentIdx, total }) {
           src={mediaSrc}
           className="slideshow__img"
           muted playsInline loop autoPlay preload="auto"
+          onLoadedMetadata={e => e.target.play().catch(() => {})}
           onCanPlay={e => e.target.play().catch(() => {})}
         />
       )}
@@ -246,20 +247,44 @@ async function saveVideo(logs, titleText, onProgress) {
           const vid = document.createElement('video')
           vid.muted = true
           vid.playsInline = true
-          vid.preload = 'metadata'
-          vid.onloadeddata = () => {
-            // Draw the first frame onto a temp canvas, return as Image
-            const tc = document.createElement('canvas')
-            tc.width = vid.videoWidth || 390
-            tc.height = vid.videoHeight || 690
-            tc.getContext('2d').drawImage(vid, 0, 0, tc.width, tc.height)
-            const snap = new Image()
-            snap.onload = () => resolve(snap)
-            snap.onerror = () => resolve(null)
-            snap.src = tc.toDataURL('image/jpeg', 0.85)
+          vid.preload = 'auto'
+
+          let settled = false
+          const settle = (val) => {
+            if (settled) return
+            settled = true
+            clearTimeout(timer)
+            resolve(val)
           }
-          vid.onerror = () => resolve(null)
+          // 5초 내 캡처 못하면 null로 처리
+          const timer = setTimeout(() => settle(null), 5000)
+
+          const captureFrame = () => {
+            try {
+              const tc = document.createElement('canvas')
+              tc.width = vid.videoWidth || 390
+              tc.height = vid.videoHeight || 690
+              tc.getContext('2d').drawImage(vid, 0, 0, tc.width, tc.height)
+              const snap = new Image()
+              snap.onload = () => settle(snap)
+              snap.onerror = () => settle(null)
+              snap.src = tc.toDataURL('image/jpeg', 0.85)
+            } catch {
+              settle(null)
+            }
+          }
+
+          // 메타데이터 로드 후 첫 프레임으로 seek
+          vid.onloadedmetadata = () => { vid.currentTime = 0.1 }
+          // seek 완료 후 프레임 캡처 (가장 안정적)
+          vid.onseeked = captureFrame
+          // seek 이벤트가 발동하지 않는 경우 대비
+          vid.onloadeddata = () => {
+            if (!vid.seekable || vid.seekable.length === 0) captureFrame()
+          }
+          vid.onerror = () => settle(null)
           vid.src = src
+          vid.load()
         })
       }
       return new Promise(resolve => {
