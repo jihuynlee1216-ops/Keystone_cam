@@ -4,10 +4,12 @@ const VERSION = 1
 
 function openDB() {
   return new Promise((resolve, reject) => {
+    if (!window.indexedDB) { reject(new Error('IndexedDB not supported')); return }
     const req = indexedDB.open(DB_NAME, VERSION)
     req.onupgradeneeded = e => e.target.result.createObjectStore(STORE)
     req.onsuccess = e => resolve(e.target.result)
     req.onerror   = e => reject(e.target.error)
+    req.onblocked = () => reject(new Error('IndexedDB blocked'))
   })
 }
 
@@ -18,6 +20,7 @@ export async function putMedia(id, blob) {
     tx.objectStore(STORE).put(blob, id)
     tx.oncomplete = () => resolve()
     tx.onerror    = e => reject(e.target.error)
+    tx.onabort    = e => reject(e.target.error ?? new Error('IDB transaction aborted'))
   })
 }
 
