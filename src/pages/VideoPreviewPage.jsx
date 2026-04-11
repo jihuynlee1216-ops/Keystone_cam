@@ -315,8 +315,13 @@ async function saveVideo(logs, titleText, onProgress) {
     cleanup()
 
     if (navigator.canShare && navigator.canShare({ files: [file] })) {
-      await navigator.share({ files: [file], title: titleText })
-      return 'saved'
+      try {
+        await navigator.share({ files: [file], title: titleText })
+        return 'saved'
+      } catch (err) {
+        if (err.name === 'AbortError') return 'saved' // 사용자가 취소
+        // 다른 오류 → 다운로드 폴백
+      }
     }
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
@@ -333,41 +338,51 @@ async function saveVideo(logs, titleText, onProgress) {
   const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp8')
     ? 'video/webm;codecs=vp8'
     : 'video/webm'
-  // captureStream(0): 수동 프레임 제어 → requestFrame() 호출 시에만 캡처
-  // (자동 24fps 방식은 일부 브라우저에서 검은 화면 발생)
-  const stream   = canvas.captureStream(0)
-  const videoTrack = stream.getVideoTracks()[0]
+
+  // captureStream(30): 30fps 자동 캡처 → 각 슬라이드가 정확히 동일한 프레임 수를 가짐
+  // captureStream(0) + requestFrame()은 JS 타이머 편차로 슬라이드별 시간 비율이 불균등해짐
+  const stream   = canvas.captureStream(30)
   const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 2_000_000 })
   const chunks   = []
   recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data) }
 
   // 첫 프레임 미리 그려두고 녹화 시작 (시작 부분 검은 화면 방지)
   drawSlideToCanvas(ctx, W, H, loadedImages[0], allMedia[0])
-  if (videoTrack.requestFrame) videoTrack.requestFrame()
   recorder.start(200)
 
+  // 각 슬라이드를 SLIDE_MS 동안 표시 — captureStream(30)이 자동으로 균등하게 캡처
   const SLIDE_MS = 2000
   for (let i = 0; i < allMedia.length; i++) {
     onProgress?.(i, allMedia.length)
     drawSlideToCanvas(ctx, W, H, loadedImages[i], allMedia[i])
-    // 각 슬라이드를 스트림에 명시적으로 전송
-    if (videoTrack.requestFrame) videoTrack.requestFrame()
-    // SLIDE_MS 동안 30fps로 동일 프레임을 반복 전송 (부드러운 영상)
-    const frameInterval = setInterval(() => {
-      if (videoTrack.requestFrame) videoTrack.requestFrame()
-    }, 33)
     await new Promise(r => setTimeout(r, SLIDE_MS))
-    clearInterval(frameInterval)
   }
 
+  // 마지막 슬라이드 프레임이 인코더에 완전히 반영되도록 여유 시간 확보
+  await new Promise(r => setTimeout(r, 300))
   await new Promise(resolve => { recorder.onstop = resolve; recorder.stop() })
   cleanup()
 
   const blob = new Blob(chunks, { type: 'video/webm' })
-  const url  = URL.createObjectURL(blob)
-  const a    = document.createElement('a')
+  const fileName = `${titleText}.webm`
+  const file = new File([blob], fileName, { type: 'video/webm' })
+
+  // 갤러리 저장: Web Share API로 파일 공유 (Android/iOS 갤러리에 직접 저장 가능)
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    try {
+      await navigator.share({ files: [file], title: titleText })
+      return 'saved'
+    } catch (err) {
+      if (err.name === 'AbortError') return 'saved' // 사용자가 취소
+      // 다른 오류 → 다운로드 폴백
+    }
+  }
+
+  // 폴백: 브라우저 다운로드
+  const url = URL.createObjectURL(blob)
+  const a   = document.createElement('a')
   a.href = url
-  a.download = `${titleText}.webm`
+  a.download = fileName
   document.body.appendChild(a)
   a.click()
   document.body.removeChild(a)

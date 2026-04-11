@@ -166,6 +166,7 @@ export default function LogCreatePage() {
   const fileInputRef  = useRef(null)
   const dbSavedIds    = useRef(new Set()) // IndexedDB 저장 성공한 mediaId 목록
   const savePromises  = useRef(new Map()) // mediaId → Promise (저장 완료 추적)
+  const blobCache     = useRef(new Map()) // mediaId → 압축 blob (이미지용 base64 변환에 사용)
 
   const [opponent, setOpponent] = useState('')
   const [venue, setVenue]       = useState('')
@@ -178,6 +179,13 @@ export default function LogCreatePage() {
   const dateObj = new Date(date + 'T00:00:00')
   const displayDate = dateObj.toLocaleDateString('ko-KR', {
     year: 'numeric', month: 'long', day: 'numeric', weekday: 'short',
+  })
+
+  const blobToDataUrl = (blob) => new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload  = () => resolve(reader.result)
+    reader.onerror = reject
+    reader.readAsDataURL(blob)
   })
 
   const compressToBlob = (file, maxDim = 1200, quality = 0.82) =>
@@ -227,7 +235,10 @@ export default function LogCreatePage() {
         savePromises.current.set(mediaId, p)
       } else {
         const p = compressToBlob(file)
-          .then(blob => putMedia(mediaId, blob))
+          .then(blob => {
+            blobCache.current.set(mediaId, blob) // base64 변환을 위해 캐시
+            return putMedia(mediaId, blob)
+          })
           .then(() => { dbSavedIds.current.add(mediaId) })
           .catch(err => { console.warn('사진 IndexedDB 저장 실패:', err) })
         savePromises.current.set(mediaId, p)
@@ -249,12 +260,32 @@ export default function LogCreatePage() {
     setSaving(true)
     // 진행 중인 IndexedDB 저장이 모두 완료될 때까지 대기
     await Promise.all([...savePromises.current.values()])
-    // IndexedDB 저장 성공한 항목의 blob URL 제거 (세션 종료 후 무효이므로)
-    const cleanMedia = media.map(item =>
-      item.mediaId && dbSavedIds.current.has(item.mediaId)
-        ? { ...item, dataUrl: null }
-        : item
+
+    // 이미지: base64 dataUrl로 변환해 localStorage에 영속 저장
+    // 영상: IndexedDB에만 저장, dataUrl은 null (세션 종료 후 blob URL 무효)
+    const cleanMedia = await Promise.all(
+      media.map(async (item) => {
+        const savedInDB = item.mediaId && dbSavedIds.current.has(item.mediaId)
+        if (!savedInDB) return item // IDB 저장 실패 → 원본 dataUrl 유지
+
+        if (item.type === 'image') {
+          const blob = blobCache.current.get(item.mediaId)
+          if (blob) {
+            try {
+              const dataUrl = await blobToDataUrl(blob)
+              return { ...item, dataUrl } // base64로 교체 → 새로고침 후에도 유지
+            } catch {
+              return { ...item, dataUrl: null } // 변환 실패 시 IDB 폴백
+            }
+          }
+        }
+        // 영상 (또는 blob 캐시 없는 이미지) → IDB 폴백
+        return { ...item, dataUrl: null }
+      })
     )
+
+    blobCache.current.clear() // 메모리 정리
+
     dispatch({
       type: 'ADD_LOG',
       payload: {
