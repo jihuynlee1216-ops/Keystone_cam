@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef } from 'react'
-import GIF from 'gif.js'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useApp } from '../store/AppContext.jsx'
 import { useMediaSrc } from '../hooks/useMediaSrc.js'
@@ -10,10 +9,10 @@ import './VideoPreviewPage.css'
 
 const TRANSITIONS = ['fade', 'slide', 'zoom']
 const MUSIC_OPTIONS = [
-  { id: 'none', label: '없음' },
-  { id: 'soft', label: '잔잔한' },
+  { id: 'none',   label: '없음' },
+  { id: 'soft',   label: '잔잔한' },
   { id: 'bright', label: '밝은' },
-  { id: 'epic', label: '웅장한' },
+  { id: 'epic',   label: '웅장한' },
 ]
 
 const PLACEHOLDER_GRADIENTS = [
@@ -33,7 +32,7 @@ function SlideFrame({ item, phase, currentIdx, total }) {
     ? PLACEHOLDER_GRADIENTS[currentIdx % PLACEHOLDER_GRADIENTS.length]
     : undefined
 
-  const dateObj = item.logDate ? new Date(item.logDate + 'T00:00:00') : null
+  const dateObj     = item.logDate ? new Date(item.logDate + 'T00:00:00') : null
   const displayDate = dateObj?.toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' })
 
   return (
@@ -51,8 +50,8 @@ function SlideFrame({ item, phase, currentIdx, total }) {
           src={mediaSrc}
           className="slideshow__img"
           muted playsInline loop autoPlay preload="auto"
-          onLoadedMetadata={e => e.target.play().catch(() => { })}
-          onCanPlay={e => e.target.play().catch(() => { })}
+          onLoadedMetadata={e => e.target.play().catch(() => {})}
+          onCanPlay={e => e.target.play().catch(() => {})}
         />
       )}
 
@@ -64,8 +63,8 @@ function SlideFrame({ item, phase, currentIdx, total }) {
         <div
           className="slideshow__overlay-text"
           style={{
-            left: `${item.overlay.x}%`,
-            top: `${item.overlay.y}%`,
+            left:     `${item.overlay.x}%`,
+            top:      `${item.overlay.y}%`,
             fontSize: OVERLAY_FONT_SIZE[item.overlay.size || 'medium'],
           }}
         >
@@ -89,7 +88,7 @@ function SlideFrame({ item, phase, currentIdx, total }) {
 
 function Slideshow({ logs, transition }) {
   const [currentIdx, setCurrentIdx] = useState(0)
-  const [phase, setPhase] = useState('visible') // 'visible' | 'exit' | 'enter'
+  const [phase, setPhase]           = useState('visible') // 'visible' | 'exit' | 'enter'
   const timerRef = useRef(null)
 
   const allMedia = logs
@@ -143,8 +142,9 @@ function Slideshow({ logs, transition }) {
           {allMedia.map((_, i) => (
             <div
               key={i}
-              className={`slideshow__progress-seg ${i === currentIdx ? 'active' : i < currentIdx ? 'done' : ''
-                }`}
+              className={`slideshow__progress-seg ${
+                i === currentIdx ? 'active' : i < currentIdx ? 'done' : ''
+              }`}
             />
           ))}
         </div>
@@ -204,15 +204,15 @@ function drawSlideToCanvas(ctx, W, H, img, item) {
   }
 }
 
-/* ─── Blob builder (heavy async work — call during "generate") ───────── */
-async function buildBlob(logs, titleText, onProgress) {
+/* ─── Save helper ────────────────────────────────────────────────────── */
+async function saveVideo(logs, titleText, onProgress) {
   const allMedia = logs
     .flatMap(log =>
       (log.media || []).map(m => ({ ...m, logDate: log.date }))
     )
     .slice(0, 12)
 
-  if (allMedia.length === 0) return null
+  if (allMedia.length === 0) return 'no-media'
 
   const W = 390, H = 690
   const canvas = document.createElement('canvas')
@@ -256,6 +256,7 @@ async function buildBlob(logs, titleText, onProgress) {
             clearTimeout(timer)
             resolve(val)
           }
+          // 5초 내 캡처 못하면 null로 처리
           const timer = setTimeout(() => settle(null), 5000)
 
           const captureFrame = () => {
@@ -273,10 +274,16 @@ async function buildBlob(logs, titleText, onProgress) {
             }
           }
 
+          // 메타데이터 로드 후 첫 프레임으로 seek
           vid.onloadedmetadata = () => { vid.currentTime = 0.1 }
+          // seek 완료 후 프레임 캡처 (가장 안정적)
           vid.onseeked = captureFrame
+          // onseeked가 발화하지 않는 브라우저(iOS Safari 등) 대비
+          // seekable 여부와 무관하게 loadeddata 이후 일정 시간 후 캡처
           vid.onloadeddata = () => {
-            setTimeout(() => { if (!settled) captureFrame() }, 200)
+            setTimeout(() => {
+              if (!settled) captureFrame()
+            }, 200)
           }
           vid.onerror = () => settle(null)
           vid.src = src
@@ -298,151 +305,92 @@ async function buildBlob(logs, titleText, onProgress) {
     typeof MediaRecorder !== 'undefined' &&
     typeof canvas.captureStream === 'function' &&
     (MediaRecorder.isTypeSupported('video/webm;codecs=vp8') ||
-      MediaRecorder.isTypeSupported('video/webm'))
+     MediaRecorder.isTypeSupported('video/webm'))
 
-  // ── iOS / no-recorder fallback: GIF ──
+  // ── iOS / no-recorder fallback: share/download as PNG ──
   if (!canRecord) {
-    const gifBlob = await new Promise((resolve, reject) => {
-      const gif = new GIF({
-        workers: 2,
-        quality: 10,
-        width: W,
-        height: H,
-        workerScript: '/gif.worker.js',
-      })
-
-      for (let i = 0; i < allMedia.length; i++) {
-        drawSlideToCanvas(ctx, W, H, loadedImages[i] || null, allMedia[i])
-        gif.addFrame(canvas, { copy: true, delay: 2000 })
-        onProgress?.(i + 1, allMedia.length)
-      }
-
-      gif.on('finished', blob => resolve(blob))
-      gif.on('error', err => reject(err))
-      gif.render()
-    })
+    drawSlideToCanvas(ctx, W, H, loadedImages[0] || null, allMedia[0])
+    const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'))
+    const file = new File([blob], `${titleText}.png`, { type: 'image/png' })
     cleanup()
-    return { blob: gifBlob, fileName: `${titleText}.gif` }
+
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file], title: titleText })
+      return 'saved'
+    }
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${titleText}.png`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+    return 'saved'
   }
 
   // ── Canvas recording (Chrome / Android) ──
   const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp8')
     ? 'video/webm;codecs=vp8'
     : 'video/webm'
-
-  const stream = canvas.captureStream(30)
+  // captureStream(0): 수동 프레임 제어 → requestFrame() 호출 시에만 캡처
+  // (자동 24fps 방식은 일부 브라우저에서 검은 화면 발생)
+  const stream   = canvas.captureStream(0)
+  const videoTrack = stream.getVideoTracks()[0]
   const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 2_000_000 })
-  const chunks = []
+  const chunks   = []
   recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data) }
 
+  // 첫 프레임 미리 그려두고 녹화 시작 (시작 부분 검은 화면 방지)
   drawSlideToCanvas(ctx, W, H, loadedImages[0], allMedia[0])
+  if (videoTrack.requestFrame) videoTrack.requestFrame()
   recorder.start(200)
 
   const SLIDE_MS = 2000
   for (let i = 0; i < allMedia.length; i++) {
     onProgress?.(i, allMedia.length)
     drawSlideToCanvas(ctx, W, H, loadedImages[i], allMedia[i])
+    // 각 슬라이드를 스트림에 명시적으로 전송
+    if (videoTrack.requestFrame) videoTrack.requestFrame()
+    // SLIDE_MS 동안 30fps로 동일 프레임을 반복 전송 (부드러운 영상)
+    const frameInterval = setInterval(() => {
+      if (videoTrack.requestFrame) videoTrack.requestFrame()
+    }, 33)
     await new Promise(r => setTimeout(r, SLIDE_MS))
+    clearInterval(frameInterval)
   }
 
-  await new Promise(r => setTimeout(r, 300))
-
-  await new Promise(resolve => {
-    let settled = false
-    const finish = () => { if (!settled) { settled = true; resolve() } }
-    recorder.onstop = finish
-    recorder.onerror = finish
-    setTimeout(finish, 5000)
-    try { recorder.stop() } catch { finish() }
-  })
+  await new Promise(resolve => { recorder.onstop = resolve; recorder.stop() })
   cleanup()
 
   const blob = new Blob(chunks, { type: 'video/webm' })
-
-  // 녹화 데이터가 너무 작으면(인코딩 실패) GIF 폴백
-  if (blob.size < 1000) {
-    const gifBlob = await new Promise((resolve, reject) => {
-      const gif = new GIF({ workers: 2, quality: 10, width: W, height: H, workerScript: '/gif.worker.js' })
-      for (let i = 0; i < allMedia.length; i++) {
-        drawSlideToCanvas(ctx, W, H, loadedImages[i] || null, allMedia[i])
-        gif.addFrame(canvas, { copy: true, delay: 2000 })
-      }
-      gif.on('finished', b => resolve(b))
-      gif.on('error', err => reject(err))
-      gif.render()
-    })
-    return { blob: gifBlob, fileName: `${titleText}.gif` }
-  }
-
-  return { blob, fileName: `${titleText}.webm` }
-}
-
-/* ─── Save helpers ───────────────────────────────────────────────────── */
-function isMobileDevice() {
-  return /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
-}
-
-// 브라우저 다운로드 트리거 (데스크탑 + Android)
-function downloadBlob(blob, fileName) {
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
+  const url  = URL.createObjectURL(blob)
+  const a    = document.createElement('a')
   a.href = url
-  a.download = fileName
-  a.style.display = 'none'
+  a.download = `${titleText}.webm`
   document.body.appendChild(a)
   a.click()
   document.body.removeChild(a)
-  setTimeout(() => URL.revokeObjectURL(url), 30000)
+  URL.revokeObjectURL(url)
+  return 'saved'
 }
-
-// iOS는 await 이후에 navigator.share() 호출하면 user gesture 만료로 실패함.
-// blob을 미리 만들어두고, 클릭 핸들러에서 await 없이 즉시 호출해야 함.
-// 반환값: Promise (iOS share) | null (download 트리거됨)
-function triggerSave(blob, fileName, titleText) {
-  // MIME 타입이 명확한 File 객체 생성 (iOS 인식률 향상)
-  const mimeType = blob.type || (fileName.endsWith('.gif') ? 'image/gif' : 'video/webm')
-  const file = new File([blob], fileName, { type: mimeType })
-
-  if (isMobileDevice()) {
-    // iOS 15+ / Android: Web Share API로 파일 직접 공유 → 사진 앱/파일 앱에 저장 가능
-    if (navigator.share) {
-      // canShare 체크: 지원 안 하는 환경이면 그냥 share 시도
-      const canTry = !navigator.canShare || navigator.canShare({ files: [file] })
-      if (canTry) {
-        return navigator.share({ files: [file], title: titleText })
-      }
-    }
-    // share 불가 → objectURL new tab (iOS Safari: 이미지 길게 누르거나 파일 앱에서 저장)
-    const url = URL.createObjectURL(blob)
-    window.open(url, '_blank')
-    setTimeout(() => URL.revokeObjectURL(url), 60000)
-    return null
-  }
-
-  // 데스크탑: 직접 다운로드
-  downloadBlob(blob, fileName)
-  return null
-}
-
 
 /* ─── Page ───────────────────────────────────────────────────────────── */
 export default function VideoPreviewPage() {
-  const navigate = useNavigate()
-  const { type } = useParams()
+  const navigate  = useNavigate()
+  const { type }  = useParams()
   const { state } = useApp()
 
   const [selectedTransition, setSelectedTransition] = useState('fade')
-  const [selectedMusic, setSelectedMusic] = useState('soft')
-  const [generating, setGenerating] = useState(false)
-  const [generated, setGenerated] = useState(false)
-  const [generateError, setGenerateError] = useState(false)
-  const [saveStatus, setSaveStatus] = useState(null) // null | 'saving' | 'saved' | 'saveHint' | 'error'
-  const [saveProgress, setSaveProgress] = useState(null) // { cur, total }
-  const [readyBlob, setReadyBlob] = useState(null) // { blob, fileName } — 미리 생성한 blob
+  const [selectedMusic, setSelectedMusic]           = useState('soft')
+  const [generating, setGenerating]                 = useState(false)
+  const [generated, setGenerated]                   = useState(false)
+  const [saveStatus, setSaveStatus]                 = useState(null) // null | 'saving' | 'saved'
+  const [saveProgress, setSaveProgress]             = useState(null) // { cur, total }
 
-  const now = new Date()
-  const currentYear = now.getFullYear()
-  const currentMon = now.getMonth() + 1
+  const now          = new Date()
+  const currentYear  = now.getFullYear()
+  const currentMon   = now.getMonth() + 1
   const relevantLogs = filterLogsByType(state.logs, type, currentYear, currentMon)
 
   const titleText = type === 'monthly'
@@ -453,76 +401,24 @@ export default function VideoPreviewPage() {
     ? `${currentMon}월의 경기 ${relevantLogs.length}개`
     : `${currentYear} 시즌 총 ${relevantLogs.length}경기`
 
-  // "영상 생성하기" 클릭 → 실제로 blob을 만들어 readyBlob에 저장
-  const handleGenerate = async () => {
+  const handleGenerate = () => {
     setGenerating(true)
-    setReadyBlob(null)
-    setSaveProgress(null)
-    setGenerateError(false)
-    try {
-      const result = await buildBlob(relevantLogs, titleText, (cur, total) => {
-        setSaveProgress({ cur: cur + 1, total })
-      })
-      if (!result) {
-        setGenerateError(true)
-        return
-      }
-      setReadyBlob(result)
-      setGenerated(true)
-    } catch (err) {
-      console.error(err)
-      setGenerateError(true)
-    } finally {
-      setGenerating(false)
-      setSaveProgress(null)
-    }
+    setTimeout(() => { setGenerating(false); setGenerated(true) }, 2400)
   }
 
-  // "저장하기" 클릭 → await 없이 즉시 triggerSave 호출 (iOS user gesture 유지)
-  const handleSave = () => {
-    if (!readyBlob) return
-    // setSaveStatus를 triggerSave 이전에 호출하지 않음 — iOS에서 React re-render가
-    // user gesture를 소모해 navigator.share가 실패할 수 있기 때문
-    let sharePromise
-    try {
-      sharePromise = triggerSave(readyBlob.blob, readyBlob.fileName, titleText)
-    } catch (err) {
-      console.error('triggerSave 오류:', err)
-      setSaveStatus('error')
-      setTimeout(() => setSaveStatus(null), 3000)
-      return
-    }
-
-    if (!sharePromise) {
-      if (isMobileDevice()) {
-        // 모바일에서 window.open 폴백 → 새 탭에서 길게 눌러 저장하도록 안내
-        setSaveStatus('saveHint')
-        setTimeout(() => setSaveStatus(null), 6000)
-      } else {
-        // 데스크탑: 다운로드 완료
-        setSaveStatus('saved')
-        setTimeout(() => setSaveStatus(null), 3000)
-      }
-      return
-    }
-
-    // iOS navigator.share Promise 처리
+  const handleSave = async () => {
     setSaveStatus('saving')
-    sharePromise
-      .then(() => {
-        setSaveStatus('saved')
-        setTimeout(() => setSaveStatus(null), 3000)
+    setSaveProgress(null)
+    try {
+      await saveVideo(relevantLogs, titleText, (cur, total) => {
+        setSaveProgress({ cur: cur + 1, total })
       })
-      .catch(err => {
-        if (err.name === 'AbortError') {
-          // 사용자가 공유 시트에서 취소
-          setSaveStatus(null)
-          return
-        }
-        console.error('share 오류:', err)
-        setSaveStatus('error')
-        setTimeout(() => setSaveStatus(null), 3000)
-      })
+      setSaveStatus('saved')
+      setTimeout(() => setSaveStatus(null), 3000)
+    } catch (err) {
+      console.error(err)
+      setSaveStatus(null)
+    }
   }
 
   const saveLabel = () => {
@@ -531,8 +427,6 @@ export default function VideoPreviewPage() {
       return '저장 중...'
     }
     if (saveStatus === 'saved') return '저장됨 ✓'
-    if (saveStatus === 'saveHint') return '새 탭에서 열었어요'
-    if (saveStatus === 'error') return '저장 실패 — 다시 시도'
     return '저장하기'
   }
 
@@ -608,26 +502,20 @@ export default function VideoPreviewPage() {
 
         {/* ── Generate / Done ── */}
         {!generated ? (
-          <>
-            <button
-              className={`video-preview-generate-btn ${generating ? 'loading' : ''} ${generateError ? 'error' : ''}`}
-              onClick={handleGenerate}
-              disabled={generating || relevantLogs.length === 0}
-            >
-              {generating ? (
-                <>
-                  <span className="video-preview-generate-btn__spinner" />
-                  {saveProgress
-                    ? `생성 중... ${saveProgress.cur}/${saveProgress.total}`
-                    : '영상 생성 중...'}
-                </>
-              ) : generateError ? (
-                '생성 실패 — 다시 시도'
-              ) : (
-                '영상 생성하기'
-              )}
-            </button>
-          </>
+          <button
+            className={`video-preview-generate-btn ${generating ? 'loading' : ''}`}
+            onClick={handleGenerate}
+            disabled={generating || relevantLogs.length === 0}
+          >
+            {generating ? (
+              <>
+                <span className="video-preview-generate-btn__spinner" />
+                영상 생성 중...
+              </>
+            ) : (
+              '영상 생성하기'
+            )}
+          </button>
         ) : (
           <div className="video-preview-done">
             <div className="video-preview-done__left">
@@ -643,7 +531,7 @@ export default function VideoPreviewPage() {
               <button
                 className={`video-preview-done__btn video-preview-done__btn--save ${saveStatus ? saveStatus : ''}`}
                 onClick={handleSave}
-                disabled={saveStatus === 'saving' || !readyBlob}
+                disabled={saveStatus === 'saving'}
               >
                 {saveStatus === 'saving' && (
                   <span className="video-preview-done__btn-spinner" />
@@ -652,7 +540,7 @@ export default function VideoPreviewPage() {
               </button>
               <button
                 className="video-preview-done__btn video-preview-done__btn--reset"
-                onClick={() => { setGenerated(false); setSaveStatus(null); setReadyBlob(null); setGenerateError(false) }}
+                onClick={() => { setGenerated(false); setSaveStatus(null) }}
               >
                 다시 만들기
               </button>
@@ -660,14 +548,9 @@ export default function VideoPreviewPage() {
           </div>
         )}
 
-        {/* Save done / hint toast */}
+        {/* Save done toast */}
         {saveStatus === 'saved' && (
           <div className="video-preview-toast">기기에 저장됐어요</div>
-        )}
-        {saveStatus === 'saveHint' && (
-          <div className="video-preview-toast video-preview-toast--hint">
-            새 탭에서 열렸어요 — 이미지를 길게 눌러 저장하세요 📥
-          </div>
         )}
       </div>
 

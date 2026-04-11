@@ -342,10 +342,6 @@
   opacity: 0.75;
 }
 
-.video-preview-generate-btn.error {
-  background: #e53e3e;
-}
-
 .video-preview-generate-btn__spinner {
   width: 16px;
   height: 16px;
@@ -475,15 +471,6 @@
   z-index: 500;
   animation: toastIn 240ms cubic-bezier(0.34, 1.56, 0.64, 1) both,
              toastOut 240ms ease 1800ms forwards;
-}
-
-.video-preview-toast--hint {
-  white-space: normal;
-  max-width: min(88vw, 320px);
-  text-align: center;
-  line-height: 1.4;
-  animation: toastIn 240ms cubic-bezier(0.34, 1.56, 0.64, 1) both,
-             toastOut 240ms ease 5400ms forwards;
 }
 
 @keyframes toastIn  { from { opacity: 0; transform: translateX(-50%) translateY(8px); }

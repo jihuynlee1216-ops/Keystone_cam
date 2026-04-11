@@ -2,6 +2,7 @@ import React, { useState, useRef, useCallback } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useApp, generateId } from '../store/AppContext.jsx'
 import { putMedia } from '../store/mediaDB.js'
+import { useMediaSrc } from '../hooks/useMediaSrc.js'
 import PageHeader from '../components/PageHeader.jsx'
 import './LogCreatePage.css'
 
@@ -14,9 +15,7 @@ function MediaEditorCard({ item, onUpdate, onRemove, isActive }) {
     item.overlay || { text: '', x: 50, y: 50, size: 'medium' }
   )
   const mediaRef = useRef(null)
-  // 업로드 중엔 item.dataUrl이 항상 유효 (blob URL)
-  // useMediaSrc 훅 없이 직접 사용해서 StrictMode race condition 방지
-  const mediaSrc = item.dataUrl || null
+  const mediaSrc = useMediaSrc(item)
 
   const handleTapPosition = useCallback((e) => {
     if (!showOverlayEditor) return
@@ -64,7 +63,6 @@ function MediaEditorCard({ item, onUpdate, onRemove, isActive }) {
             loop
             autoPlay
             preload="auto"
-            onLoadedMetadata={e => e.target.play().catch(() => {})}
             onCanPlay={e => e.target.play().catch(() => {})}
           />
         )}
@@ -169,11 +167,6 @@ export default function LogCreatePage() {
   const dbSavedIds    = useRef(new Set()) // IndexedDB 저장 성공한 mediaId 목록
   const savePromises  = useRef(new Map()) // mediaId → Promise (저장 완료 추적)
 
-  // iOS Safari에서 IDB 트랜잭션이 무한 대기하는 버그 방지용 타임아웃
-  // resolve(false)로 끝내 저장 버튼이 절대 멈추지 않게 함
-  const withIDBTimeout = (p, ms = 15000) =>
-    Promise.race([p.then(() => true), new Promise(resolve => setTimeout(() => resolve(false), ms))])
-
   const [opponent, setOpponent] = useState('')
   const [venue, setVenue]       = useState('')
   const [memo, setMemo]         = useState('')
@@ -228,14 +221,14 @@ export default function LogCreatePage() {
       setMedia(prev => [...prev, item])
 
       if (isVideo) {
-        const p = withIDBTimeout(putMedia(mediaId, file))
-          .then(ok => { if (ok) dbSavedIds.current.add(mediaId) })
+        const p = putMedia(mediaId, file)
+          .then(() => { dbSavedIds.current.add(mediaId) })
           .catch(err => { console.warn('영상 IndexedDB 저장 실패:', err) })
         savePromises.current.set(mediaId, p)
       } else {
         const p = compressToBlob(file)
-          .then(blob => withIDBTimeout(putMedia(mediaId, blob)))
-          .then(ok => { if (ok) dbSavedIds.current.add(mediaId) })
+          .then(blob => putMedia(mediaId, blob))
+          .then(() => { dbSavedIds.current.add(mediaId) })
           .catch(err => { console.warn('사진 IndexedDB 저장 실패:', err) })
         savePromises.current.set(mediaId, p)
       }
@@ -254,16 +247,14 @@ export default function LogCreatePage() {
 
   const handleSave = async () => {
     setSaving(true)
-    // 진행 중인 IndexedDB 저장이 모두 완료될 때까지 대기 (타임아웃 있어서 절대 멈추지 않음)
+    // 진행 중인 IndexedDB 저장이 모두 완료될 때까지 대기
     await Promise.all([...savePromises.current.values()])
-
-    // blob URL은 세션 종료 후 무효 → null로 교체
-    // 사진·영상 모두 IndexedDB에서 로드 (base64 localStorage 저장 없음 → 모바일 용량 문제 방지)
-    const cleanMedia = media.map(item => ({
-      ...item,
-      dataUrl: item.dataUrl?.startsWith('blob:') ? null : item.dataUrl,
-    }))
-
+    // IndexedDB 저장 성공한 항목의 blob URL 제거 (세션 종료 후 무효이므로)
+    const cleanMedia = media.map(item =>
+      item.mediaId && dbSavedIds.current.has(item.mediaId)
+        ? { ...item, dataUrl: null }
+        : item
+    )
     dispatch({
       type: 'ADD_LOG',
       payload: {
