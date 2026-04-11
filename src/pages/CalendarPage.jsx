@@ -50,7 +50,8 @@ function CalendarCell({ day, dateStr, logs, hasLogs, todayFlag, isSun, isSat, vi
           className="calendar-cell__thumb"
           muted
           playsInline
-          preload="metadata"
+          preload="auto"
+          onLoadedMetadata={e => { e.target.currentTime = 0.1 }}
           aria-hidden="true"
         />
       ) : thumbSrc ? (

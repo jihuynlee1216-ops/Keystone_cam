@@ -34,7 +34,13 @@ export default function MediaCard({ item, index = 0, onClick }) {
           <img src={mediaSrc} alt={item.caption || ''} className="media-card__img" />
         )}
         {hasMedia && !isImage && (
-          <video src={mediaSrc} className="media-card__video" muted playsInline loop autoPlay />
+          <video
+            src={mediaSrc}
+            className="media-card__video"
+            muted playsInline loop autoPlay
+            onLoadedMetadata={e => e.target.play().catch(() => {})}
+            onCanPlay={e => e.target.play().catch(() => {})}
+          />
         )}
 
         {/* Text overlay */}

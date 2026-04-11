@@ -27,7 +27,8 @@ function ThumbMedia({ item, className }) {
         className={className}
         muted
         playsInline
-        preload="metadata"
+        preload="auto"
+        onLoadedMetadata={e => { e.target.currentTime = 0.1 }}
       />
     )
   }

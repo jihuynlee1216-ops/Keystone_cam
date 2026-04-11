@@ -278,9 +278,12 @@ async function saveVideo(logs, titleText, onProgress) {
           vid.onloadedmetadata = () => { vid.currentTime = 0.1 }
           // seek 완료 후 프레임 캡처 (가장 안정적)
           vid.onseeked = captureFrame
-          // seek 이벤트가 발동하지 않는 경우 대비
+          // onseeked가 발화하지 않는 브라우저(iOS Safari 등) 대비
+          // seekable 여부와 무관하게 loadeddata 이후 일정 시간 후 캡처
           vid.onloadeddata = () => {
-            if (!vid.seekable || vid.seekable.length === 0) captureFrame()
+            setTimeout(() => {
+              if (!settled) captureFrame()
+            }, 200)
           }
           vid.onerror = () => settle(null)
           vid.src = src
