@@ -2,7 +2,6 @@ import React, { useState, useRef, useCallback } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useApp, generateId } from '../store/AppContext.jsx'
 import { putMedia } from '../store/mediaDB.js'
-import { useMediaSrc } from '../hooks/useMediaSrc.js'
 import PageHeader from '../components/PageHeader.jsx'
 import './LogCreatePage.css'
 
@@ -15,7 +14,9 @@ function MediaEditorCard({ item, onUpdate, onRemove, isActive }) {
     item.overlay || { text: '', x: 50, y: 50, size: 'medium' }
   )
   const mediaRef = useRef(null)
-  const mediaSrc = useMediaSrc(item)
+  // 업로드 중엔 item.dataUrl이 항상 유효 (blob URL)
+  // useMediaSrc 훅 없이 직접 사용해서 StrictMode race condition 방지
+  const mediaSrc = item.dataUrl || null
 
   const handleTapPosition = useCallback((e) => {
     if (!showOverlayEditor) return
