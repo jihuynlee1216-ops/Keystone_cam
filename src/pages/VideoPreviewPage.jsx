@@ -360,10 +360,37 @@ async function saveVideo(logs, titleText, onProgress) {
 
   // 마지막 슬라이드 프레임이 인코더에 완전히 반영되도록 여유 시간 확보
   await new Promise(r => setTimeout(r, 300))
-  await new Promise(resolve => { recorder.onstop = resolve; recorder.stop() })
+
+  // recorder.stop() → onstop 대기 (onerror / 5초 타임아웃으로 무한 대기 방지)
+  await new Promise(resolve => {
+    let settled = false
+    const finish = () => { if (!settled) { settled = true; resolve() } }
+    recorder.onstop  = finish
+    recorder.onerror = finish
+    setTimeout(finish, 5000)
+    try { recorder.stop() } catch { finish() }
+  })
   cleanup()
 
   const blob = new Blob(chunks, { type: 'video/webm' })
+
+  // 녹화된 데이터가 너무 작으면(인코딩 실패) PNG 폴백
+  if (blob.size < 1000) {
+    drawSlideToCanvas(ctx, W, H, loadedImages[0] || null, allMedia[0])
+    const pngBlob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'))
+    const pngFile = new File([pngBlob], `${titleText}.png`, { type: 'image/png' })
+    if (navigator.canShare && navigator.canShare({ files: [pngFile] })) {
+      try { await navigator.share({ files: [pngFile], title: titleText }); return 'saved' }
+      catch (err) { if (err.name === 'AbortError') return 'saved' }
+    }
+    const pu = URL.createObjectURL(pngBlob)
+    const pa = document.createElement('a')
+    pa.href = pu; pa.download = `${titleText}.png`
+    document.body.appendChild(pa); pa.click()
+    document.body.removeChild(pa); URL.revokeObjectURL(pu)
+    return 'saved'
+  }
+
   const fileName = `${titleText}.webm`
   const file = new File([blob], fileName, { type: 'video/webm' })
 
@@ -400,7 +427,7 @@ export default function VideoPreviewPage() {
   const [selectedMusic, setSelectedMusic]           = useState('soft')
   const [generating, setGenerating]                 = useState(false)
   const [generated, setGenerated]                   = useState(false)
-  const [saveStatus, setSaveStatus]                 = useState(null) // null | 'saving' | 'saved'
+  const [saveStatus, setSaveStatus]                 = useState(null) // null | 'saving' | 'saved' | 'error'
   const [saveProgress, setSaveProgress]             = useState(null) // { cur, total }
 
   const now          = new Date()
@@ -432,7 +459,8 @@ export default function VideoPreviewPage() {
       setTimeout(() => setSaveStatus(null), 3000)
     } catch (err) {
       console.error(err)
-      setSaveStatus(null)
+      setSaveStatus('error')
+      setTimeout(() => setSaveStatus(null), 3000)
     }
   }
 
@@ -442,6 +470,7 @@ export default function VideoPreviewPage() {
       return '저장 중...'
     }
     if (saveStatus === 'saved') return '저장됨 ✓'
+    if (saveStatus === 'error') return '저장 실패 — 다시 시도'
     return '저장하기'
   }
 
