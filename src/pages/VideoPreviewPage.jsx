@@ -10,10 +10,10 @@ import './VideoPreviewPage.css'
 
 const TRANSITIONS = ['fade', 'slide', 'zoom']
 const MUSIC_OPTIONS = [
-  { id: 'none',   label: '없음' },
-  { id: 'soft',   label: '잔잔한' },
+  { id: 'none', label: '없음' },
+  { id: 'soft', label: '잔잔한' },
   { id: 'bright', label: '밝은' },
-  { id: 'epic',   label: '웅장한' },
+  { id: 'epic', label: '웅장한' },
 ]
 
 const PLACEHOLDER_GRADIENTS = [
@@ -33,7 +33,7 @@ function SlideFrame({ item, phase, currentIdx, total }) {
     ? PLACEHOLDER_GRADIENTS[currentIdx % PLACEHOLDER_GRADIENTS.length]
     : undefined
 
-  const dateObj     = item.logDate ? new Date(item.logDate + 'T00:00:00') : null
+  const dateObj = item.logDate ? new Date(item.logDate + 'T00:00:00') : null
   const displayDate = dateObj?.toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' })
 
   return (
@@ -51,8 +51,8 @@ function SlideFrame({ item, phase, currentIdx, total }) {
           src={mediaSrc}
           className="slideshow__img"
           muted playsInline loop autoPlay preload="auto"
-          onLoadedMetadata={e => e.target.play().catch(() => {})}
-          onCanPlay={e => e.target.play().catch(() => {})}
+          onLoadedMetadata={e => e.target.play().catch(() => { })}
+          onCanPlay={e => e.target.play().catch(() => { })}
         />
       )}
 
@@ -64,8 +64,8 @@ function SlideFrame({ item, phase, currentIdx, total }) {
         <div
           className="slideshow__overlay-text"
           style={{
-            left:     `${item.overlay.x}%`,
-            top:      `${item.overlay.y}%`,
+            left: `${item.overlay.x}%`,
+            top: `${item.overlay.y}%`,
             fontSize: OVERLAY_FONT_SIZE[item.overlay.size || 'medium'],
           }}
         >
@@ -89,7 +89,7 @@ function SlideFrame({ item, phase, currentIdx, total }) {
 
 function Slideshow({ logs, transition }) {
   const [currentIdx, setCurrentIdx] = useState(0)
-  const [phase, setPhase]           = useState('visible') // 'visible' | 'exit' | 'enter'
+  const [phase, setPhase] = useState('visible') // 'visible' | 'exit' | 'enter'
   const timerRef = useRef(null)
 
   const allMedia = logs
@@ -143,9 +143,8 @@ function Slideshow({ logs, transition }) {
           {allMedia.map((_, i) => (
             <div
               key={i}
-              className={`slideshow__progress-seg ${
-                i === currentIdx ? 'active' : i < currentIdx ? 'done' : ''
-              }`}
+              className={`slideshow__progress-seg ${i === currentIdx ? 'active' : i < currentIdx ? 'done' : ''
+                }`}
             />
           ))}
         </div>
@@ -299,7 +298,7 @@ async function buildBlob(logs, titleText, onProgress) {
     typeof MediaRecorder !== 'undefined' &&
     typeof canvas.captureStream === 'function' &&
     (MediaRecorder.isTypeSupported('video/webm;codecs=vp8') ||
-     MediaRecorder.isTypeSupported('video/webm'))
+      MediaRecorder.isTypeSupported('video/webm'))
 
   // ── iOS / no-recorder fallback: GIF ──
   if (!canRecord) {
@@ -331,9 +330,9 @@ async function buildBlob(logs, titleText, onProgress) {
     ? 'video/webm;codecs=vp8'
     : 'video/webm'
 
-  const stream   = canvas.captureStream(30)
+  const stream = canvas.captureStream(30)
   const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 2_000_000 })
-  const chunks   = []
+  const chunks = []
   recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data) }
 
   drawSlideToCanvas(ctx, W, H, loadedImages[0], allMedia[0])
@@ -351,7 +350,7 @@ async function buildBlob(logs, titleText, onProgress) {
   await new Promise(resolve => {
     let settled = false
     const finish = () => { if (!settled) { settled = true; resolve() } }
-    recorder.onstop  = finish
+    recorder.onstop = finish
     recorder.onerror = finish
     setTimeout(finish, 5000)
     try { recorder.stop() } catch { finish() }
@@ -400,42 +399,50 @@ function downloadBlob(blob, fileName) {
 // blob을 미리 만들어두고, 클릭 핸들러에서 await 없이 즉시 호출해야 함.
 // 반환값: Promise (iOS share) | null (download 트리거됨)
 function triggerSave(blob, fileName, titleText) {
-  // 모바일(iOS/Android): Web Share API로 파일 공유
+  // MIME 타입이 명확한 File 객체 생성 (iOS 인식률 향상)
+  const mimeType = blob.type || (fileName.endsWith('.gif') ? 'image/gif' : 'video/webm')
+  const file = new File([blob], fileName, { type: mimeType })
+
   if (isMobileDevice()) {
-    const file = new File([blob], fileName, { type: blob.type })
-    if (navigator.canShare && navigator.canShare({ files: [file] })) {
-      return navigator.share({ files: [file], title: titleText })
+    // iOS 15+ / Android: Web Share API로 파일 직접 공유 → 사진 앱/파일 앱에 저장 가능
+    if (navigator.share) {
+      // canShare 체크: 지원 안 하는 환경이면 그냥 share 시도
+      const canTry = !navigator.canShare || navigator.canShare({ files: [file] })
+      if (canTry) {
+        return navigator.share({ files: [file], title: titleText })
+      }
     }
-    // canShare 없거나 false → 구형 iOS 등: 새 탭으로 열기 (사용자가 길게 눌러 저장)
+    // share 불가 → objectURL new tab (iOS Safari: 이미지 길게 누르거나 파일 앱에서 저장)
     const url = URL.createObjectURL(blob)
     window.open(url, '_blank')
-    setTimeout(() => URL.revokeObjectURL(url), 30000)
+    setTimeout(() => URL.revokeObjectURL(url), 60000)
     return null
   }
 
-  // 데스크탑: navigator.share 건너뛰고 바로 다운로드
+  // 데스크탑: 직접 다운로드
   downloadBlob(blob, fileName)
   return null
 }
 
+
 /* ─── Page ───────────────────────────────────────────────────────────── */
 export default function VideoPreviewPage() {
-  const navigate  = useNavigate()
-  const { type }  = useParams()
+  const navigate = useNavigate()
+  const { type } = useParams()
   const { state } = useApp()
 
   const [selectedTransition, setSelectedTransition] = useState('fade')
-  const [selectedMusic, setSelectedMusic]           = useState('soft')
-  const [generating, setGenerating]                 = useState(false)
-  const [generated, setGenerated]                   = useState(false)
-  const [generateError, setGenerateError]           = useState(false)
-  const [saveStatus, setSaveStatus]                 = useState(null) // null | 'saving' | 'saved' | 'error'
-  const [saveProgress, setSaveProgress]             = useState(null) // { cur, total }
-  const [readyBlob, setReadyBlob]                   = useState(null) // { blob, fileName } — 미리 생성한 blob
+  const [selectedMusic, setSelectedMusic] = useState('soft')
+  const [generating, setGenerating] = useState(false)
+  const [generated, setGenerated] = useState(false)
+  const [generateError, setGenerateError] = useState(false)
+  const [saveStatus, setSaveStatus] = useState(null) // null | 'saving' | 'saved' | 'saveHint' | 'error'
+  const [saveProgress, setSaveProgress] = useState(null) // { cur, total }
+  const [readyBlob, setReadyBlob] = useState(null) // { blob, fileName } — 미리 생성한 blob
 
-  const now          = new Date()
-  const currentYear  = now.getFullYear()
-  const currentMon   = now.getMonth() + 1
+  const now = new Date()
+  const currentYear = now.getFullYear()
+  const currentMon = now.getMonth() + 1
   const relevantLogs = filterLogsByType(state.logs, type, currentYear, currentMon)
 
   const titleText = type === 'monthly'
@@ -487,9 +494,15 @@ export default function VideoPreviewPage() {
     }
 
     if (!sharePromise) {
-      // 다운로드 or 새 탭 열기가 트리거됨 (동기 완료)
-      setSaveStatus('saved')
-      setTimeout(() => setSaveStatus(null), 3000)
+      if (isMobileDevice()) {
+        // 모바일에서 window.open 폴백 → 새 탭에서 길게 눌러 저장하도록 안내
+        setSaveStatus('saveHint')
+        setTimeout(() => setSaveStatus(null), 6000)
+      } else {
+        // 데스크탑: 다운로드 완료
+        setSaveStatus('saved')
+        setTimeout(() => setSaveStatus(null), 3000)
+      }
       return
     }
 
@@ -518,6 +531,7 @@ export default function VideoPreviewPage() {
       return '저장 중...'
     }
     if (saveStatus === 'saved') return '저장됨 ✓'
+    if (saveStatus === 'saveHint') return '새 탭에서 열었어요'
     if (saveStatus === 'error') return '저장 실패 — 다시 시도'
     return '저장하기'
   }
@@ -646,9 +660,14 @@ export default function VideoPreviewPage() {
           </div>
         )}
 
-        {/* Save done toast */}
+        {/* Save done / hint toast */}
         {saveStatus === 'saved' && (
           <div className="video-preview-toast">기기에 저장됐어요</div>
+        )}
+        {saveStatus === 'saveHint' && (
+          <div className="video-preview-toast video-preview-toast--hint">
+            새 탭에서 열렸어요 — 이미지를 길게 눌러 저장하세요 📥
+          </div>
         )}
       </div>
 
