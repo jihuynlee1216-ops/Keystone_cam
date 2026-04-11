@@ -342,6 +342,10 @@
   opacity: 0.75;
 }
 
+.video-preview-generate-btn.error {
+  background: #e53e3e;
+}
+
 .video-preview-generate-btn__spinner {
   width: 16px;
   height: 16px;

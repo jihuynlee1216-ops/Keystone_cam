@@ -378,26 +378,44 @@ async function buildBlob(logs, titleText, onProgress) {
   return { blob, fileName: `${titleText}.webm` }
 }
 
-/* ─── Share/download trigger (must be called synchronously from click) ── */
-// iOS는 await 이후에 navigator.share() 호출하면 user gesture 만료로 실패함.
-// blob을 미리 만들어두고, 클릭 핸들러에서 await 없이 즉시 호출해야 함.
-function triggerSave(blob, fileName, titleText) {
-  const file = new File([blob], fileName, { type: blob.type })
+/* ─── Save helpers ───────────────────────────────────────────────────── */
+function isMobileDevice() {
+  return /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
+}
 
-  if (navigator.canShare && navigator.canShare({ files: [file] })) {
-    return navigator.share({ files: [file], title: titleText })
-  }
-
-  // 폴백: 브라우저 다운로드 (Android Chrome / 데스크탑)
+// 브라우저 다운로드 트리거 (데스크탑 + Android)
+function downloadBlob(blob, fileName) {
   const url = URL.createObjectURL(blob)
-  const a   = document.createElement('a')
+  const a = document.createElement('a')
   a.href = url
   a.download = fileName
+  a.style.display = 'none'
   document.body.appendChild(a)
   a.click()
   document.body.removeChild(a)
-  setTimeout(() => URL.revokeObjectURL(url), 1000)
-  return Promise.resolve()
+  setTimeout(() => URL.revokeObjectURL(url), 30000)
+}
+
+// iOS는 await 이후에 navigator.share() 호출하면 user gesture 만료로 실패함.
+// blob을 미리 만들어두고, 클릭 핸들러에서 await 없이 즉시 호출해야 함.
+// 반환값: Promise (iOS share) | null (download 트리거됨)
+function triggerSave(blob, fileName, titleText) {
+  // 모바일(iOS/Android): Web Share API로 파일 공유
+  if (isMobileDevice()) {
+    const file = new File([blob], fileName, { type: blob.type })
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      return navigator.share({ files: [file], title: titleText })
+    }
+    // canShare 없거나 false → 구형 iOS 등: 새 탭으로 열기 (사용자가 길게 눌러 저장)
+    const url = URL.createObjectURL(blob)
+    window.open(url, '_blank')
+    setTimeout(() => URL.revokeObjectURL(url), 30000)
+    return null
+  }
+
+  // 데스크탑: navigator.share 건너뛰고 바로 다운로드
+  downloadBlob(blob, fileName)
+  return null
 }
 
 /* ─── Page ───────────────────────────────────────────────────────────── */
@@ -410,6 +428,7 @@ export default function VideoPreviewPage() {
   const [selectedMusic, setSelectedMusic]           = useState('soft')
   const [generating, setGenerating]                 = useState(false)
   const [generated, setGenerated]                   = useState(false)
+  const [generateError, setGenerateError]           = useState(false)
   const [saveStatus, setSaveStatus]                 = useState(null) // null | 'saving' | 'saved' | 'error'
   const [saveProgress, setSaveProgress]             = useState(null) // { cur, total }
   const [readyBlob, setReadyBlob]                   = useState(null) // { blob, fileName } — 미리 생성한 blob
@@ -432,14 +451,20 @@ export default function VideoPreviewPage() {
     setGenerating(true)
     setReadyBlob(null)
     setSaveProgress(null)
+    setGenerateError(false)
     try {
       const result = await buildBlob(relevantLogs, titleText, (cur, total) => {
         setSaveProgress({ cur: cur + 1, total })
       })
-      setReadyBlob(result)   // null이면 미디어 없는 것
+      if (!result) {
+        setGenerateError(true)
+        return
+      }
+      setReadyBlob(result)
       setGenerated(true)
     } catch (err) {
       console.error(err)
+      setGenerateError(true)
     } finally {
       setGenerating(false)
       setSaveProgress(null)
@@ -449,19 +474,39 @@ export default function VideoPreviewPage() {
   // "저장하기" 클릭 → await 없이 즉시 triggerSave 호출 (iOS user gesture 유지)
   const handleSave = () => {
     if (!readyBlob) return
+    // setSaveStatus를 triggerSave 이전에 호출하지 않음 — iOS에서 React re-render가
+    // user gesture를 소모해 navigator.share가 실패할 수 있기 때문
+    let sharePromise
+    try {
+      sharePromise = triggerSave(readyBlob.blob, readyBlob.fileName, titleText)
+    } catch (err) {
+      console.error('triggerSave 오류:', err)
+      setSaveStatus('error')
+      setTimeout(() => setSaveStatus(null), 3000)
+      return
+    }
+
+    if (!sharePromise) {
+      // 다운로드 or 새 탭 열기가 트리거됨 (동기 완료)
+      setSaveStatus('saved')
+      setTimeout(() => setSaveStatus(null), 3000)
+      return
+    }
+
+    // iOS navigator.share Promise 처리
     setSaveStatus('saving')
-    triggerSave(readyBlob.blob, readyBlob.fileName, titleText)
+    sharePromise
       .then(() => {
         setSaveStatus('saved')
         setTimeout(() => setSaveStatus(null), 3000)
       })
       .catch(err => {
         if (err.name === 'AbortError') {
-          // 사용자가 공유 시트에서 취소 → 저장 안 된 것
+          // 사용자가 공유 시트에서 취소
           setSaveStatus(null)
           return
         }
-        console.error(err)
+        console.error('share 오류:', err)
         setSaveStatus('error')
         setTimeout(() => setSaveStatus(null), 3000)
       })
@@ -549,22 +594,26 @@ export default function VideoPreviewPage() {
 
         {/* ── Generate / Done ── */}
         {!generated ? (
-          <button
-            className={`video-preview-generate-btn ${generating ? 'loading' : ''}`}
-            onClick={handleGenerate}
-            disabled={generating || relevantLogs.length === 0}
-          >
-            {generating ? (
-              <>
-                <span className="video-preview-generate-btn__spinner" />
-                {saveProgress
-                  ? `생성 중... ${saveProgress.cur}/${saveProgress.total}`
-                  : '영상 생성 중...'}
-              </>
-            ) : (
-              '영상 생성하기'
-            )}
-          </button>
+          <>
+            <button
+              className={`video-preview-generate-btn ${generating ? 'loading' : ''} ${generateError ? 'error' : ''}`}
+              onClick={handleGenerate}
+              disabled={generating || relevantLogs.length === 0}
+            >
+              {generating ? (
+                <>
+                  <span className="video-preview-generate-btn__spinner" />
+                  {saveProgress
+                    ? `생성 중... ${saveProgress.cur}/${saveProgress.total}`
+                    : '영상 생성 중...'}
+                </>
+              ) : generateError ? (
+                '생성 실패 — 다시 시도'
+              ) : (
+                '영상 생성하기'
+              )}
+            </button>
+          </>
         ) : (
           <div className="video-preview-done">
             <div className="video-preview-done__left">
@@ -589,7 +638,7 @@ export default function VideoPreviewPage() {
               </button>
               <button
                 className="video-preview-done__btn video-preview-done__btn--reset"
-                onClick={() => { setGenerated(false); setSaveStatus(null); setReadyBlob(null) }}
+                onClick={() => { setGenerated(false); setSaveStatus(null); setReadyBlob(null); setGenerateError(false) }}
               >
                 다시 만들기
               </button>
