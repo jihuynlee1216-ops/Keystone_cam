@@ -63,6 +63,7 @@ function MediaEditorCard({ item, onUpdate, onRemove, isActive }) {
             loop
             autoPlay
             preload="auto"
+            onLoadedMetadata={e => e.target.play().catch(() => {})}
             onCanPlay={e => e.target.play().catch(() => {})}
           />
         )}

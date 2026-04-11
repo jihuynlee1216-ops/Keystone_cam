@@ -127,6 +127,9 @@
   width: 100%;
   height: 100%;
   object-fit: cover;
+  /* iOS Safari: overflow:hidden + border-radius 컨테이너 안 검은화면 방지 */
+  -webkit-transform: translateZ(0);
+  transform: translateZ(0);
 }
 
 .archive-grid-card__overlay {
@@ -209,6 +212,9 @@
   width: 100%;
   height: 100%;
   object-fit: cover;
+  /* iOS Safari: overflow:hidden 컨테이너 안 검은화면 방지 */
+  -webkit-transform: translateZ(0);
+  transform: translateZ(0);
 }
 
 .archive-feed-card__media-overlay {

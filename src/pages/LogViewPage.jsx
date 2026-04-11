@@ -30,6 +30,7 @@ function MediaItemView({ item, idx, activeIdx }) {
             loop
             autoPlay
             preload="auto"
+            onLoadedMetadata={e => e.target.play().catch(() => {})}
             onCanPlay={e => e.target.play().catch(() => {})}
           />
         )}

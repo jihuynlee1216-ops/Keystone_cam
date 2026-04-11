@@ -27,8 +27,10 @@ function ThumbMedia({ item, className }) {
         className={className}
         muted
         playsInline
+        autoPlay
         preload="auto"
-        onLoadedMetadata={e => { e.target.currentTime = 0.1 }}
+        onLoadedMetadata={e => { e.target.currentTime = 0.1; e.target.play().catch(() => {}) }}
+        onCanPlay={e => e.target.play().catch(() => {})}
       />
     )
   }
