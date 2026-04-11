@@ -1,7 +1,8 @@
-import React, { useState, useRef } from 'react'
+import React, { useState, useRef, useCallback } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useApp, getLogByDate } from '../store/AppContext.jsx'
 import { useMediaSrc } from '../hooks/useMediaSrc.js'
+import { getMedia } from '../store/mediaDB.js'
 import MediaCard from '../components/MediaCard.jsx'
 import './LogViewPage.css'
 
@@ -109,6 +110,41 @@ export default function LogViewPage() {
 
   const hasMedia = log.media?.length > 0
 
+  const handleDownload = useCallback(async (item) => {
+    try {
+      let blob
+      // IndexedDB에 저장된 미디어면 blob 로드
+      if (item.mediaId) {
+        blob = await getMedia(item.mediaId)
+      }
+      // dataUrl이 base64면 fetch로 blob 변환
+      if (!blob && item.dataUrl && item.dataUrl.startsWith('data:')) {
+        const res = await fetch(item.dataUrl)
+        blob = await res.blob()
+      }
+      // dataUrl이 blob URL이면 fetch
+      if (!blob && item.dataUrl && item.dataUrl.startsWith('blob:')) {
+        const res = await fetch(item.dataUrl)
+        blob = await res.blob()
+      }
+      if (!blob) return
+
+      const ext = item.type === 'video' ? 'mp4' : 'jpg'
+      const filename = `직관기록_${log.date}_${Date.now()}.${ext}`
+
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = filename
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      console.warn('다운로드 실패:', err)
+    }
+  }, [log])
+
   return (
     <div className="log-view">
       {/* Floating back button */}
@@ -148,6 +184,20 @@ export default function LogViewPage() {
               />
             ))}
           </div>
+
+          {/* Download button */}
+          {log.media[activeIdx] && (
+            <button
+              className="log-view__download-btn"
+              onClick={() => handleDownload(log.media[activeIdx])}
+              aria-label="저장"
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                <path d="M12 3v13M12 16l-5-5M12 16l5-5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                <path d="M5 21h14" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+              </svg>
+            </button>
+          )}
 
           {/* Story progress bar */}
           {log.media.length > 1 && (

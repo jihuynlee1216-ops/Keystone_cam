@@ -28,6 +28,30 @@
 .log-view__back-btn    { left: 16px; }
 .log-view__options-btn { right: 16px; }
 
+/* ─── Download Button ───────────────────────────────────────────────── */
+.log-view__download-btn {
+  position: absolute;
+  bottom: 20px;
+  right: 16px;
+  z-index: 150;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: rgba(0,0,0,0.45);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #FFFFFF;
+  transition: background var(--transition-base), transform var(--transition-spring);
+}
+
+.log-view__download-btn:active {
+  background: rgba(0,0,0,0.70);
+  transform: scale(0.88);
+}
+
 .log-view__back-btn:active,
 .log-view__options-btn:active {
   background: rgba(0,0,0,0.65);
