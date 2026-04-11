@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
+import GIF from 'gif.js'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useApp } from '../store/AppContext.jsx'
 import { useMediaSrc } from '../hooks/useMediaSrc.js'
@@ -300,12 +301,29 @@ async function buildBlob(logs, titleText, onProgress) {
     (MediaRecorder.isTypeSupported('video/webm;codecs=vp8') ||
      MediaRecorder.isTypeSupported('video/webm'))
 
-  // ── iOS / no-recorder fallback: PNG ──
+  // ── iOS / no-recorder fallback: GIF ──
   if (!canRecord) {
-    drawSlideToCanvas(ctx, W, H, loadedImages[0] || null, allMedia[0])
-    const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'))
+    const gifBlob = await new Promise((resolve, reject) => {
+      const gif = new GIF({
+        workers: 2,
+        quality: 10,
+        width: W,
+        height: H,
+        workerScript: '/gif.worker.js',
+      })
+
+      for (let i = 0; i < allMedia.length; i++) {
+        drawSlideToCanvas(ctx, W, H, loadedImages[i] || null, allMedia[i])
+        gif.addFrame(canvas, { copy: true, delay: 2000 })
+        onProgress?.(i + 1, allMedia.length)
+      }
+
+      gif.on('finished', blob => resolve(blob))
+      gif.on('error', err => reject(err))
+      gif.render()
+    })
     cleanup()
-    return { blob, fileName: `${titleText}.png` }
+    return { blob: gifBlob, fileName: `${titleText}.gif` }
   }
 
   // ── Canvas recording (Chrome / Android) ──
@@ -342,11 +360,19 @@ async function buildBlob(logs, titleText, onProgress) {
 
   const blob = new Blob(chunks, { type: 'video/webm' })
 
-  // 녹화 데이터가 너무 작으면(인코딩 실패) PNG 폴백
+  // 녹화 데이터가 너무 작으면(인코딩 실패) GIF 폴백
   if (blob.size < 1000) {
-    drawSlideToCanvas(ctx, W, H, loadedImages[0] || null, allMedia[0])
-    const pngBlob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'))
-    return { blob: pngBlob, fileName: `${titleText}.png` }
+    const gifBlob = await new Promise((resolve, reject) => {
+      const gif = new GIF({ workers: 2, quality: 10, width: W, height: H, workerScript: '/gif.worker.js' })
+      for (let i = 0; i < allMedia.length; i++) {
+        drawSlideToCanvas(ctx, W, H, loadedImages[i] || null, allMedia[i])
+        gif.addFrame(canvas, { copy: true, delay: 2000 })
+      }
+      gif.on('finished', b => resolve(b))
+      gif.on('error', err => reject(err))
+      gif.render()
+    })
+    return { blob: gifBlob, fileName: `${titleText}.gif` }
   }
 
   return { blob, fileName: `${titleText}.webm` }
