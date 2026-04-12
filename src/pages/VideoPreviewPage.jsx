@@ -96,6 +96,7 @@ function Slideshow({ logs, transition }) {
     .flatMap(log =>
       (log.media || []).map(m => ({ ...m, logDate: log.date, memo: log.memo, opponent: log.opponent }))
     )
+    .sort((a, b) => a.logDate.localeCompare(b.logDate))
     .slice(0, 12)
 
   useEffect(() => {
@@ -211,6 +212,7 @@ async function saveVideo(logs, titleText, onProgress) {
     .flatMap(log =>
       (log.media || []).map(m => ({ ...m, logDate: log.date }))
     )
+    .sort((a, b) => a.logDate.localeCompare(b.logDate))
     .slice(0, 12)
 
   if (allMedia.length === 0) return 'no-media'
