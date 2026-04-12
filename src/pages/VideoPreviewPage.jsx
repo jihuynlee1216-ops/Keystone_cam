@@ -332,9 +332,10 @@ async function saveVideo(logs, titleText, onProgress) {
   cleanup()
 
   const filename = `${titleText}.gif`
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent)
 
-  // navigator.share로 기기에 직접 저장 (iOS 사진앱 / Android 갤러리)
-  if (navigator.share && navigator.canShare) {
+  // iOS: navigator.share → 사진앱에 바로 저장
+  if (isIOS && navigator.share && navigator.canShare) {
     const file = new File([blob], filename, { type: 'image/gif' })
     if (navigator.canShare({ files: [file] })) {
       try {
@@ -344,7 +345,7 @@ async function saveVideo(logs, titleText, onProgress) {
     }
   }
 
-  // 데스크톱 폴백
+  // Android / 데스크톱: <a download>로 다운로드 폴더에 바로 저장
   const url = URL.createObjectURL(blob)
   const a   = document.createElement('a')
   a.href = url

@@ -131,8 +131,10 @@ export default function LogViewPage() {
       const mimeType = item.type === 'video' ? 'video/mp4' : 'image/jpeg'
       const filename = `직관기록_${log.date}_${Date.now()}.${ext}`
 
-      // iOS/모바일: navigator.share로 기기에 직접 저장 (사진 앱 저장 가능)
-      if (navigator.share && navigator.canShare) {
+      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent)
+
+      // iOS: navigator.share → 사진앱에 바로 저장
+      if (isIOS && navigator.share && navigator.canShare) {
         const file = new File([blob], filename, { type: mimeType })
         if (navigator.canShare({ files: [file] })) {
           await navigator.share({ files: [file] })
@@ -140,7 +142,7 @@ export default function LogViewPage() {
         }
       }
 
-      // 데스크톱 폴백: <a download>
+      // Android / 데스크톱: <a download>로 다운로드 폴더에 바로 저장
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
