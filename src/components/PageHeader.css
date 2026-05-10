@@ -2,11 +2,11 @@
   position: sticky;
   top: 0;
   z-index: 50;
-  height: var(--header-height);
+  height: calc(var(--header-height) + var(--safe-top));
   display: grid;
   grid-template-columns: 48px 1fr 48px;
-  align-items: center;
-  padding: 0 4px;
+  align-items: end;
+  padding: var(--safe-top) 4px 0;
   background: rgba(250, 250, 248, 0.92);
   backdrop-filter: blur(20px) saturate(180%);
   -webkit-backdrop-filter: blur(20px) saturate(180%);

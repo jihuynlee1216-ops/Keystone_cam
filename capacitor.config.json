@@ -1,0 +1,8 @@
+{
+  "appId": "com.smarter.sportsarchive",
+  "appName": "SportsArchive",
+  "webDir": "dist",
+  "server": {
+    "iosScheme": "https"
+  }
+}

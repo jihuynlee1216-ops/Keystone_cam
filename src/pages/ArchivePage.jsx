@@ -18,19 +18,35 @@ const VIEWS = ['grid', 'feed']
 
 function ThumbMedia({ item, className }) {
   const src = useMediaSrc(item)
+  const [poster, setPoster] = React.useState(null)
+
+  React.useEffect(() => {
+    if (!src || item.type !== 'video') return
+    const vid = document.createElement('video')
+    vid.muted = true
+    vid.playsInline = true
+    vid.preload = 'auto'
+    vid.onloadeddata = () => {
+      vid.currentTime = 0.1
+    }
+    vid.onseeked = () => {
+      try {
+        const c = document.createElement('canvas')
+        c.width = vid.videoWidth
+        c.height = vid.videoHeight
+        c.getContext('2d').drawImage(vid, 0, 0)
+        setPoster(c.toDataURL('image/jpeg', 0.7))
+      } catch {}
+    }
+    vid.src = src
+    vid.load()
+  }, [src, item.type])
+
   if (!src) return null
   if (item.type === 'video') {
-    return (
-      <video
-        key={src}
-        src={src}
-        className={className}
-        muted
-        playsInline
-        preload="auto"
-        onLoadedMetadata={e => { e.target.currentTime = 0.1 }}
-      />
-    )
+    return poster
+      ? <img src={poster} alt="" className={className} />
+      : <video key={src} src={src} className={className} muted playsInline preload="auto" onLoadedMetadata={e => { e.target.currentTime = 0.1 }} />
   }
   return <img src={src} alt="" className={className} />
 }

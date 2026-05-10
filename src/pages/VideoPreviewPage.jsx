@@ -3,17 +3,18 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { useApp } from '../store/AppContext.jsx'
 import { useMediaSrc } from '../hooks/useMediaSrc.js'
 import { getMedia } from '../store/mediaDB'
-import GIF from 'gif.js'
+import { FFmpeg } from '@ffmpeg/ffmpeg'
+import { fetchFile } from '@ffmpeg/util'
 import BaseballCharacter from '../components/BaseballCharacter.jsx'
 import BottomNav from '../components/BottomNav.jsx'
 import './VideoPreviewPage.css'
 
 const TRANSITIONS = ['fade', 'slide', 'zoom']
 const MUSIC_OPTIONS = [
-  { id: 'none',   label: '없음' },
-  { id: 'soft',   label: '잔잔한' },
-  { id: 'bright', label: '밝은' },
-  { id: 'epic',   label: '웅장한' },
+  { id: 'none',   label: '없음',   file: null },
+  { id: 'soft',   label: '잔잔한', file: '/bgm-soft.wav' },
+  { id: 'bright', label: '밝은',   file: '/bgm-bright.wav' },
+  { id: 'epic',   label: '웅장한', file: '/bgm-epic.wav' },
 ]
 
 const PLACEHOLDER_GRADIENTS = [
@@ -155,17 +156,10 @@ function Slideshow({ logs, transition }) {
   )
 }
 
-/* ─── Canvas drawing helper ──────────────────────────────────────────── */
-function drawSlideToCanvas(ctx, W, H, img, item) {
-  ctx.fillStyle = '#0f3460'
-  ctx.fillRect(0, 0, W, H)
-
-  if (img && img.naturalWidth > 0 && img.naturalHeight > 0) {
-    const scale = Math.max(W / img.naturalWidth, H / img.naturalHeight)
-    const sw = img.naturalWidth * scale
-    const sh = img.naturalHeight * scale
-    ctx.drawImage(img, (W - sw) / 2, (H - sh) / 2, sw, sh)
-  }
+/* ─── Canvas drawing helpers ─────────────────────────────────────────── */
+function drawOverlayOnly(ctx, W, H, item) {
+  // 투명 배경 위에 그라데이션 + 텍스트만 그리기
+  ctx.clearRect(0, 0, W, H)
 
   // Gradient vignette
   const grad = ctx.createLinearGradient(0, H * 0.45, 0, H)
@@ -206,8 +200,38 @@ function drawSlideToCanvas(ctx, W, H, img, item) {
   }
 }
 
-/* ─── Save helper ────────────────────────────────────────────────────── */
-async function saveVideo(logs, titleText, onProgress) {
+function drawSlideToCanvas(ctx, W, H, img, item) {
+  ctx.fillStyle = '#0f3460'
+  ctx.fillRect(0, 0, W, H)
+
+  if (img && img.naturalWidth > 0 && img.naturalHeight > 0) {
+    const scale = Math.max(W / img.naturalWidth, H / img.naturalHeight)
+    const sw = img.naturalWidth * scale
+    const sh = img.naturalHeight * scale
+    ctx.drawImage(img, (W - sw) / 2, (H - sh) / 2, sw, sh)
+  }
+
+  drawOverlayOnly(ctx, W, H, item)
+}
+
+// 캔버스를 PNG Uint8Array로 변환
+async function canvasToPngBytes(canvas) {
+  const blob = await new Promise(r => canvas.toBlob(r, 'image/png'))
+  return new Uint8Array(await blob.arrayBuffer())
+}
+
+/* ─── FFmpeg 싱글톤 ─────────────────────────────────────────────────── */
+let ffmpegInstance = null
+async function getFFmpeg() {
+  if (ffmpegInstance) return ffmpegInstance
+  const ffmpeg = new FFmpeg()
+  await ffmpeg.load()
+  ffmpegInstance = ffmpeg
+  return ffmpeg
+}
+
+/* ─── Save helper (MP4) ─────────────────────────────────────────────── */
+async function saveVideo(logs, titleText, bgmFile, onProgress) {
   const allMedia = logs
     .flatMap(log =>
       (log.media || []).map(m => ({ ...m, logDate: log.date }))
@@ -218,127 +242,165 @@ async function saveVideo(logs, titleText, onProgress) {
   if (allMedia.length === 0) return 'no-media'
 
   const W = 390, H = 690
+  const PHOTO_DURATION = 1 // 사진 표시 시간 (초)
+  const MAX_VIDEO_DURATION = 3 // 영상 최대 길이 (초)
+
+  const ffmpeg = await getFFmpeg()
+
   const canvas = document.createElement('canvas')
   canvas.width = W
   canvas.height = H
   const ctx = canvas.getContext('2d')
 
-  // Resolve each media item to an src string
+  // 각 미디어를 blob으로 가져오기
   const blobUrls = []
-  const resolvedSrcs = []
-  for (const item of allMedia) {
-    let src = null
-    if (item.dataUrl) {
-      src = item.dataUrl
-    } else if (item.mediaId) {
-      const blob = await getMedia(item.mediaId)
-      if (blob) {
-        src = URL.createObjectURL(blob)
-        blobUrls.push(src)
-      }
-    }
-    resolvedSrcs.push(src)
-  }
+  const segments = [] // { filename, type, duration }
 
-  // Pre-load images; for video items, seek to first frame and capture
-  const loadedImages = await Promise.all(
-    allMedia.map((item, i) => {
-      const src = resolvedSrcs[i]
-      if (!src) return Promise.resolve(null)
-      if (item.type === 'video') {
-        return new Promise(resolve => {
-          const vid = document.createElement('video')
-          vid.muted = true
-          vid.playsInline = true
-          vid.preload = 'auto'
-
-          let settled = false
-          const settle = (val) => {
-            if (settled) return
-            settled = true
-            clearTimeout(timer)
-            resolve(val)
-          }
-          // 5초 내 캡처 못하면 null로 처리
-          const timer = setTimeout(() => settle(null), 5000)
-
-          const captureFrame = () => {
-            try {
-              const tc = document.createElement('canvas')
-              tc.width = vid.videoWidth || 390
-              tc.height = vid.videoHeight || 690
-              tc.getContext('2d').drawImage(vid, 0, 0, tc.width, tc.height)
-              const snap = new Image()
-              snap.onload = () => settle(snap)
-              snap.onerror = () => settle(null)
-              snap.src = tc.toDataURL('image/jpeg', 0.85)
-            } catch {
-              settle(null)
-            }
-          }
-
-          // 메타데이터 로드 후 첫 프레임으로 seek
-          vid.onloadedmetadata = () => { vid.currentTime = 0.1 }
-          // seek 완료 후 프레임 캡처 (가장 안정적)
-          vid.onseeked = captureFrame
-          // onseeked가 발화하지 않는 브라우저(iOS Safari 등) 대비
-          // seekable 여부와 무관하게 loadeddata 이후 일정 시간 후 캡처
-          vid.onloadeddata = () => {
-            setTimeout(() => {
-              if (!settled) captureFrame()
-            }, 200)
-          }
-          vid.onerror = () => settle(null)
-          vid.src = src
-          vid.load()
-        })
-      }
-      return new Promise(resolve => {
-        const img = new Image()
-        img.onload = () => resolve(img)
-        img.onerror = () => resolve(null)
-        img.src = src
-      })
-    })
-  )
-
-  const cleanup = () => blobUrls.forEach(u => URL.revokeObjectURL(u))
-
-  // ── GIF 생성 (모든 기기에서 동작) ──
-  const SLIDE_DELAY = 2000 // 각 슬라이드 표시 시간 (ms)
-
-  const gif = new GIF({
-    workers: 2,
-    quality: 10,
-    width: W,
-    height: H,
-    workerScript: '/gif.worker.js',
-  })
-
-  // 각 슬라이드를 캔버스에 그리고 GIF 프레임으로 추가
   for (let i = 0; i < allMedia.length; i++) {
     onProgress?.(i, allMedia.length)
-    drawSlideToCanvas(ctx, W, H, loadedImages[i], allMedia[i])
-    // 캔버스 픽셀을 복사해서 프레임 추가 (각 슬라이드 동일 시간)
-    const frameData = ctx.getImageData(0, 0, W, H)
-    gif.addFrame(frameData, { delay: SLIDE_DELAY, copy: true })
+    const item = allMedia[i]
+    let blob = null
+
+    if (item.dataUrl) {
+      const res = await fetch(item.dataUrl)
+      blob = await res.blob()
+    } else if (item.mediaId) {
+      blob = await getMedia(item.mediaId)
+    }
+    if (!blob) continue
+
+    const data = await fetchFile(blob)
+
+    if (item.type === 'video') {
+      // 영상: 원본 + 오버레이 PNG 합성
+      const inputName = `input_${i}.mp4`
+      const overlayName = `overlay_${i}.png`
+      const segName = `seg_${i}.mp4`
+      await ffmpeg.writeFile(inputName, data)
+
+      // 오버레이 PNG 생성 (투명 배경 + 텍스트/그라데이션)
+      drawOverlayOnly(ctx, W, H, item)
+      const overlayPng = await canvasToPngBytes(canvas)
+      await ffmpeg.writeFile(overlayName, overlayPng)
+
+      // 영상 크기 맞추고 오버레이 합성, 최대 3초
+      await ffmpeg.exec([
+        '-i', inputName,
+        '-i', overlayName,
+        '-t', String(MAX_VIDEO_DURATION),
+        '-filter_complex',
+        `[0:v]scale=${W}:${H}:force_original_aspect_ratio=increase,crop=${W}:${H},setsar=1[v];[v][1:v]overlay=0:0`,
+        '-c:v', 'libx264', '-preset', 'ultrafast',
+        '-pix_fmt', 'yuv420p',
+        '-an',
+        '-y', segName
+      ])
+      await ffmpeg.deleteFile(inputName)
+      await ffmpeg.deleteFile(overlayName)
+      segments.push({ filename: segName, type: 'video' })
+    } else {
+      // 사진: 원본 이미지 + 오버레이 PNG → FFmpeg overlay 합성 → 1초 영상
+      const inputName = `input_${i}.jpg`
+      const overlayName = `overlay_${i}.png`
+      const segName = `seg_${i}.mp4`
+      await ffmpeg.writeFile(inputName, data)
+
+      // 오버레이 PNG 생성 (투명 배경 + 텍스트/그라데이션)
+      drawOverlayOnly(ctx, W, H, item)
+      const overlayPng = await canvasToPngBytes(canvas)
+      await ffmpeg.writeFile(overlayName, overlayPng)
+
+      await ffmpeg.exec([
+        '-loop', '1', '-i', inputName,
+        '-i', overlayName,
+        '-t', String(PHOTO_DURATION),
+        '-filter_complex',
+        `[0:v]scale=${W}:${H}:force_original_aspect_ratio=increase,crop=${W}:${H},setsar=1[v];[v][1:v]overlay=0:0`,
+        '-c:v', 'libx264', '-preset', 'ultrafast',
+        '-pix_fmt', 'yuv420p',
+        '-y', segName
+      ])
+      await ffmpeg.deleteFile(inputName)
+      await ffmpeg.deleteFile(overlayName)
+      segments.push({ filename: segName, type: 'photo' })
+    }
   }
 
-  // GIF 렌더링 완료 대기
-  const blob = await new Promise((resolve, reject) => {
-    gif.on('finished', resolve)
-    gif.on('error', reject)
-    gif.render()
-  })
+  if (segments.length === 0) return 'no-media'
 
-  cleanup()
+  // concat 파일 목록 생성
+  const concatList = segments.map(s => `file '${s.filename}'`).join('\n')
+  await ffmpeg.writeFile('list.txt', new TextEncoder().encode(concatList))
 
-  const filename = `${titleText}.gif`
+  // 모든 세그먼트를 하나의 MP4로 합치기 (영상만)
+  await ffmpeg.exec([
+    '-f', 'concat', '-safe', '0',
+    '-i', 'list.txt',
+    '-c:v', 'libx264', '-preset', 'ultrafast',
+    '-pix_fmt', 'yuv420p',
+    '-movflags', '+faststart',
+    '-y', 'video_only.mp4'
+  ])
+
+  // 정리
+  for (const s of segments) {
+    await ffmpeg.deleteFile(s.filename).catch(() => {})
+  }
+  await ffmpeg.deleteFile('list.txt').catch(() => {})
+
+  // BGM 합성
+  let finalFile = 'video_only.mp4'
+  if (bgmFile) {
+    const bgmRes = await fetch(bgmFile)
+    const bgmBlob = await bgmRes.blob()
+    const bgmData = await fetchFile(bgmBlob)
+    await ffmpeg.writeFile('bgm.wav', bgmData)
+
+    await ffmpeg.exec([
+      '-i', 'video_only.mp4',
+      '-i', 'bgm.wav',
+      '-c:v', 'copy',
+      '-c:a', 'aac', '-b:a', '128k',
+      '-shortest',
+      '-movflags', '+faststart',
+      '-y', 'output.mp4'
+    ])
+    await ffmpeg.deleteFile('video_only.mp4').catch(() => {})
+    await ffmpeg.deleteFile('bgm.wav').catch(() => {})
+    finalFile = 'output.mp4'
+  }
+
+  const outputData = await ffmpeg.readFile(finalFile)
+  await ffmpeg.deleteFile(finalFile).catch(() => {})
+  const blob = new Blob([outputData], { type: 'video/mp4' })
+
+  blobUrls.forEach(u => URL.revokeObjectURL(u))
+
+  const filename = `${titleText}.mp4`
+
+  // Capacitor 네이티브 앱: WKWebView 메시지 핸들러로 사진 앨범에 저장
+  if (window.webkit?.messageHandlers?.saveToGallery) {
+    const reader = new FileReader()
+    const base64 = await new Promise((resolve) => {
+      reader.onloadend = () => resolve(reader.result.split(',')[1])
+      reader.readAsDataURL(blob)
+    })
+
+    await new Promise((resolve, reject) => {
+      window.__galleryCallback = (err) => {
+        delete window.__galleryCallback
+        if (err) reject(new Error(err))
+        else resolve()
+      }
+      window.webkit.messageHandlers.saveToGallery.postMessage({ data: base64, type: 'video/mp4' })
+    })
+    return 'saved'
+  }
+
+  // 웹: 기존 방식 유지
   const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent)
-
-  // iOS: navigator.share → 사진앱에 바로 저장
   if (isIOS && navigator.share && navigator.canShare) {
-    const file = new File([blob], filename, { type: 'image/gif' })
+    const file = new File([blob], filename, { type: 'video/mp4' })
     if (navigator.canShare({ files: [file] })) {
       try {
         await navigator.share({ files: [file], title: titleText })
@@ -347,7 +409,6 @@ async function saveVideo(logs, titleText, onProgress) {
     }
   }
 
-  // Android / 데스크톱: <a download>로 다운로드 폴더에 바로 저장
   const url = URL.createObjectURL(blob)
   const a   = document.createElement('a')
   a.href = url
@@ -366,7 +427,7 @@ export default function VideoPreviewPage() {
   const { state } = useApp()
 
   const [selectedTransition, setSelectedTransition] = useState('fade')
-  const [selectedMusic, setSelectedMusic]           = useState('soft')
+  const [selectedMusic, setSelectedMusic]           = useState('none')
   const [generating, setGenerating]                 = useState(false)
   const [generated, setGenerated]                   = useState(false)
   const [saveStatus, setSaveStatus]                 = useState(null) // null | 'saving' | 'saved'
@@ -394,13 +455,15 @@ export default function VideoPreviewPage() {
     setSaveStatus('saving')
     setSaveProgress(null)
     try {
-      await saveVideo(relevantLogs, titleText, (cur, total) => {
+      const bgmFile = MUSIC_OPTIONS.find(m => m.id === selectedMusic)?.file || null
+      await saveVideo(relevantLogs, titleText, bgmFile, (cur, total) => {
         setSaveProgress({ cur: cur + 1, total })
       })
       setSaveStatus('saved')
       setTimeout(() => setSaveStatus(null), 3000)
     } catch (err) {
       console.error(err)
+      alert('저장 오류: ' + (err.message || err))
       setSaveStatus(null)
     }
   }

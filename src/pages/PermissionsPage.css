@@ -1,0 +1,118 @@
+.permissions-page {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100dvh;
+  padding: 24px;
+  padding-top: calc(24px + var(--safe-top));
+  padding-bottom: calc(24px + var(--safe-bottom));
+  background: var(--color-bg);
+}
+
+.permissions-content {
+  width: 100%;
+  max-width: 380px;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.permissions-header {
+  margin-bottom: 4px;
+}
+
+.permissions-title {
+  font-size: 24px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--color-text-primary);
+  margin-bottom: 10px;
+}
+
+.permissions-subtitle {
+  font-size: 14px;
+  font-weight: 300;
+  color: var(--color-text-secondary);
+  line-height: 1.6;
+  white-space: pre-line;
+}
+
+/* ─── List ────────────────────────────────────────────────────────── */
+.permissions-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.permissions-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--color-border-soft);
+}
+
+.permissions-item:last-child {
+  border-bottom: none;
+}
+
+.permissions-item__icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: var(--color-surface-alt);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.permissions-item__text {
+  flex: 1;
+  padding-top: 2px;
+}
+
+.permissions-item__title {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  margin-bottom: 4px;
+}
+
+.permissions-item__optional {
+  font-weight: 400;
+  color: var(--color-text-tertiary);
+}
+
+.permissions-item__desc {
+  font-size: 13px;
+  font-weight: 300;
+  color: var(--color-text-secondary);
+  line-height: 1.5;
+}
+
+/* ─── Note ────────────────────────────────────────────────────────── */
+.permissions-note {
+  font-size: 12px;
+  font-weight: 300;
+  color: var(--color-text-tertiary);
+  line-height: 1.6;
+  white-space: pre-line;
+}
+
+/* ─── Button ──────────────────────────────────────────────────────── */
+.permissions-confirm {
+  width: 100%;
+  padding: 16px;
+  border-radius: var(--radius-md);
+  background: #3D5AF1;
+  color: #FFFFFF;
+  font-size: 16px;
+  font-weight: 500;
+  transition: opacity var(--transition-base), transform var(--transition-spring);
+}
+
+.permissions-confirm:active {
+  opacity: 0.88;
+  transform: scale(0.98);
+}

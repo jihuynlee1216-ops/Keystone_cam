@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>로그인 중...</title>
+  <style>
+    body { display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; font-family: -apple-system, sans-serif; background: #fafaf8; color: #666; }
+    p { font-size: 16px; }
+  </style>
+</head>
+<body>
+  <p>앱으로 돌아가는 중...</p>
+  <script>
+    // Google OAuth가 이 페이지로 redirect → 앱의 커스텀 URL 스킴으로 전달
+    const params = window.location.search
+    window.location.href = 'sportsarchive://google-callback' + params
+  </script>
+</body>
+</html>

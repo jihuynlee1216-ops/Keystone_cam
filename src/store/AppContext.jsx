@@ -1,35 +1,8 @@
-import React, { createContext, useContext, useReducer, useEffect, useCallback } from 'react'
+import React, { createContext, useContext, useReducer, useEffect, useCallback, useRef } from 'react'
 import { deleteMedia } from './mediaDB'
+import { saveUserProfile, loadUserProfile, saveLog, loadAllLogs, deleteLogFromDB } from './firebase'
 
-/* ─── Data Model ─────────────────────────────────────────────────────── *
- *
- * Log: {
- *   id:        string,
- *   date:      string,           // "YYYY-MM-DD"
- *   opponent:  string,
- *   venue:     string,
- *   memo:      string,
- *   media:     MediaItem[],
- *   teamColor: string,           // hex
- *   createdAt: string,
- * }
- *
- * MediaItem: {
- *   id:       string,
- *   type:     "image" | "video",
- *   dataUrl:  string,
- *   caption:  string,
- *   overlay:  { text, x, y, size } | null,
- * }
- *
- * User: {
- *   name:        string,
- *   teamColor:   string,
- *   teamName:    string,
- *   onboarded:   boolean,
- * }
- * ──────────────────────────────────────────────────────────────────── */
-
+/* ─── Data Model ─────────────────────────────────────────────────────── */
 
 const INITIAL_USER = {
   name: '',
@@ -86,78 +59,89 @@ const INITIAL_STATE = {
 /* ─── Context ────────────────────────────────────────────────────────── */
 const AppContext = createContext(null)
 
-export function AppProvider({ children }) {
+export function AppProvider({ uid, children }) {
   const [state, dispatch] = useReducer(reducer, INITIAL_STATE)
+  const [loaded, setLoaded] = React.useState(false)
+  const loadedRef = useRef(false)
 
-  // Persist to localStorage
+  // Firestore에서 데이터 로드
   useEffect(() => {
-    const saved = localStorage.getItem('sports-archive-state')
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved)
-        // 예시 데이터(seed-)로 시작하는 id 제거
-        if (parsed.logs) {
-          parsed.logs = parsed.logs.filter(l => !l.id.startsWith('seed-'))
-          // blob URL은 페이지 새로고침 후 무효 → 제거해서 IndexedDB에서 다시 로드
-          parsed.logs = parsed.logs.map(l => ({
-            ...l,
-            media: (l.media || []).map(m => ({
-              ...m,
-              dataUrl: m.dataUrl?.startsWith('blob:') ? null : m.dataUrl,
-            })),
-          }))
-        }
-        dispatch({ type: 'HYDRATE', payload: parsed })
-      } catch (_) {
-        // ignore corrupt data
-      }
-    }
-  }, [])
+    if (!uid) return
+    loadedRef.current = false
+    setLoaded(false)
 
-  useEffect(() => {
-    try {
-      localStorage.setItem('sports-archive-state', JSON.stringify(state))
-    } catch (e) {
-      // QuotaExceededError: 미디어는 IndexedDB에 있으므로 dataUrl만 제거 후 재시도
+    async function load() {
       try {
-        const fallback = {
-          ...state,
-          logs: state.logs.map(l => ({
-            ...l,
-            media: (l.media || []).map(m => ({ ...m, dataUrl: null })),
+        const [profile, logs] = await Promise.all([
+          loadUserProfile(uid),
+          loadAllLogs(uid),
+        ])
+
+        const user = profile
+          ? { ...INITIAL_USER, ...profile }
+          : INITIAL_USER
+
+        // blob URL 정리
+        const cleanedLogs = (logs || []).map(l => ({
+          ...l,
+          media: (l.media || []).map(m => ({
+            ...m,
+            dataUrl: m.dataUrl?.startsWith('blob:') ? null : m.dataUrl,
           })),
-        }
-        localStorage.setItem('sports-archive-state', JSON.stringify(fallback))
-        console.warn('localStorage 용량 초과 - dataUrl 제거 후 저장됨')
-      } catch (_) {
-        console.error('localStorage 저장 실패:', e)
+        }))
+
+        dispatch({ type: 'HYDRATE', payload: { user, logs: cleanedLogs } })
+      } catch (err) {
+        console.error('Firestore load error:', err)
+        alert('데이터 로드 오류: ' + (err.message || err))
+      } finally {
+        loadedRef.current = true
+        setLoaded(true)
       }
     }
-  }, [state])
+    load()
+  }, [uid])
+
+  // 유저 프로필 변경 시 Firestore에 저장
+  useEffect(() => {
+    if (!uid || !loadedRef.current) return
+    saveUserProfile(uid, state.user).catch(err =>
+      console.error('Profile save error:', err)
+    )
+  }, [uid, state.user])
 
   // Apply accent color as CSS variable
   useEffect(() => {
     document.documentElement.style.setProperty('--color-accent', state.user.teamColor)
-    // Generate soft version
     document.documentElement.style.setProperty(
       '--color-accent-soft',
       hexToRgba(state.user.teamColor, 0.1)
     )
   }, [state.user.teamColor])
 
-  // IDB 영상 정리를 포함한 dispatch 래퍼
+  // IDB 영상 정리 + Firestore 연동 dispatch 래퍼
   const enhancedDispatch = useCallback((action) => {
     if (action.type === 'DELETE_LOG') {
       const log = state.logs.find(l => l.id === action.payload)
       log?.media?.forEach(item => {
         if (item.mediaId) deleteMedia(item.mediaId)
       })
+      if (uid) deleteLogFromDB(uid, action.payload).catch(console.error)
     }
+
+    if (action.type === 'ADD_LOG' && uid) {
+      saveLog(uid, action.payload).catch(console.error)
+    }
+
+    if (action.type === 'UPDATE_LOG' && uid) {
+      saveLog(uid, action.payload).catch(console.error)
+    }
+
     dispatch(action)
-  }, [state.logs])
+  }, [state.logs, uid])
 
   return (
-    <AppContext.Provider value={{ state, dispatch: enhancedDispatch }}>
+    <AppContext.Provider value={{ state, dispatch: enhancedDispatch, loaded }}>
       {children}
     </AppContext.Provider>
   )

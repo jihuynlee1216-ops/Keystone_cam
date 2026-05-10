@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useApp } from '../store/AppContext.jsx'
 import BaseballCharacter from '../components/BaseballCharacter.jsx'
+import TeamMascot from '../components/TeamMascot.jsx'
 import './OnboardingPage.css'
 
 const TEAM_PRESETS = [
@@ -103,7 +104,7 @@ export default function OnboardingPage() {
                   key={team.name}
                   className={`onboarding__team-chip ${selectedTeam?.name === team.name ? 'selected' : ''}`}
                   style={{ '--chip-color': team.color }}
-                  onClick={() => setSelectedTeam(team)}
+                  onClick={() => { setSelectedTeam(team); dispatch({ type: 'SET_ACCENT', payload: team.color }) }}
                 >
                   <span
                     className="onboarding__team-dot"
@@ -138,11 +139,11 @@ export default function OnboardingPage() {
 
         {current === 'done' && (
           <div className="onboarding__step animate-in onboarding__step--done">
-            <div className="onboarding__done-character">
-              <BaseballCharacter
-                size={130}
-                mood="cheer"
-                capColor={selectedTeam?.color || customColor}
+            <div className="onboarding__done-character onboarding__mascot-wave">
+              <TeamMascot
+                teamName={selectedTeam?.name}
+                teamColor={selectedTeam?.color || customColor}
+                size={150}
               />
             </div>
             <h2 className="onboarding__title onboarding__title--done">

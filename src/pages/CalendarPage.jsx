@@ -26,9 +26,36 @@ function formatDate(year, month, day) {
   return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
 }
 
+function useVideoPoster(src, isVideo) {
+  const [poster, setPoster] = React.useState(null)
+  React.useEffect(() => {
+    if (!src || !isVideo) { setPoster(null); return }
+    const vid = document.createElement('video')
+    vid.muted = true
+    vid.playsInline = true
+    vid.preload = 'auto'
+    vid.onloadeddata = () => { vid.currentTime = 0.1 }
+    vid.onseeked = () => {
+      try {
+        const c = document.createElement('canvas')
+        c.width = vid.videoWidth
+        c.height = vid.videoHeight
+        c.getContext('2d').drawImage(vid, 0, 0)
+        setPoster(c.toDataURL('image/jpeg', 0.7))
+      } catch {}
+    }
+    vid.src = src
+    vid.load()
+  }, [src, isVideo])
+  return poster
+}
+
 function CalendarCell({ day, dateStr, logs, hasLogs, todayFlag, isSun, isSat, viewMonth, onClick }) {
   const firstMediaItem = logs[0]?.media?.[0]
   const thumbSrc = useMediaSrc(firstMediaItem)
+  const isVideo = firstMediaItem?.type === 'video'
+  const poster = useVideoPoster(thumbSrc, isVideo)
+  const displaySrc = isVideo ? poster : thumbSrc
 
   return (
     <button
@@ -43,19 +70,8 @@ function CalendarCell({ day, dateStr, logs, hasLogs, todayFlag, isSun, isSat, vi
       aria-label={`${viewMonth}월 ${day}일${hasLogs ? ', 기록 있음' : ''}`}
     >
       {/* Thumbnail background for days with logs */}
-      {thumbSrc && firstMediaItem?.type === 'video' ? (
-        <video
-          key={thumbSrc}
-          src={thumbSrc}
-          className="calendar-cell__thumb"
-          muted
-          playsInline
-          preload="auto"
-          onLoadedMetadata={e => { e.target.currentTime = 0.1 }}
-          aria-hidden="true"
-        />
-      ) : thumbSrc ? (
-        <img src={thumbSrc} alt="" className="calendar-cell__thumb" aria-hidden="true" />
+      {displaySrc ? (
+        <img src={displaySrc} alt="" className="calendar-cell__thumb" aria-hidden="true" />
       ) : null}
 
       {/* Date number */}
