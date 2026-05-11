@@ -1,6 +1,7 @@
 {
   "rewrites": [
     { "source": "/google-callback.html", "destination": "/google-callback.html" },
+    { "source": "/kakao-callback.html", "destination": "/kakao-callback.html" },
     { "source": "/(.*)", "destination": "/index.html" }
   ],
   "headers": [

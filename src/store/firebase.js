@@ -41,153 +41,152 @@ export const db = getFirestore(app)
 // Firebase 콘솔 > Authentication > Sign-in method > Google > Web client ID
 const GOOGLE_WEB_CLIENT_ID = '1011804159446-enau53h53kmqpr56l7jp0m319ulbtjl4.apps.googleusercontent.com'
 // 카카오 developers.kakao.com > 앱 > REST API 키
-const KAKAO_REST_API_KEY = 'YOUR_KAKAO_REST_API_KEY'
-const KAKAO_REDIRECT_URI = 'sportsarchive://kakao-callback'
+const KAKAO_REST_API_KEY = 'ef050dae695aed6cd66f27e3b12c001d'
+const KAKAO_REDIRECT_URI = 'https://keystone-cam.vercel.app/kakao-callback.html'
 
 const isNative = !!window.webkit?.messageHandlers
+
+// ─── Safari 열기 (네이티브 or 웹) ──────────────────────────────────
+function openInSafari(url) {
+  if (window.webkit?.messageHandlers?.openSafari) {
+    window.webkit.messageHandlers.openSafari.postMessage(url)
+  } else {
+    window.open(url, '_blank')
+  }
+}
+
+// OAuth 콜백 대기 (AppDelegate에서 호출됨)
+function waitForOAuthCallback(prefix) {
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      delete window.__handleOAuthCallback
+      reject(new Error('로그인 시간 초과'))
+    }, 120000) // 2분 타임아웃
+
+    window.__handleOAuthCallback = (urlString) => {
+      if (!urlString.startsWith(prefix)) return
+      clearTimeout(timeout)
+      delete window.__handleOAuthCallback
+      resolve(urlString)
+    }
+  })
+}
 
 // ─── Google 로그인 ──────────────────────────────────────────────────
 export async function loginWithGoogle() {
   if (!isNative) {
-    // 웹: popup 방식
     const googleProvider = new GoogleAuthProvider()
     const result = await signInWithPopup(auth, googleProvider)
     return result.user
   }
 
-  // 네이티브: Safari에서 Google OAuth
-  const { Browser } = await import('@capacitor/browser')
-  const { App: CapApp } = await import('@capacitor/app')
+  // 콜백 리스너 먼저 등록
+  const callbackPromise = waitForOAuthCallback('sportsarchive://google-callback')
 
-  return new Promise((resolve, reject) => {
-    const state = Math.random().toString(36).slice(2)
-    sessionStorage.setItem('google_oauth_state', state)
+  // Safari에서 Google OAuth 열기
+  const params = new URLSearchParams({
+    client_id: GOOGLE_WEB_CLIENT_ID,
+    redirect_uri: 'https://keystone-cam.vercel.app/google-callback.html',
+    response_type: 'code',
+    scope: 'openid email profile',
+    state: Math.random().toString(36).slice(2),
+    access_type: 'offline',
+    prompt: 'select_account',
+  })
+  openInSafari(`https://accounts.google.com/o/oauth2/v2/auth?${params}`)
 
-    const listener = CapApp.addListener('appUrlOpen', async (event) => {
-      if (!event.url.startsWith('sportsarchive://google-callback')) return
+  // 콜백 대기
+  const urlString = await callbackPromise
+  const url = new URL(urlString.replace('sportsarchive://', 'https://'))
+  const code = url.searchParams.get('code')
+  if (!code) throw new Error('인증 코드가 없어요')
 
-      await Browser.close()
-      listener.remove()
-
-      try {
-        const url = new URL(event.url.replace('sportsarchive://', 'https://'))
-        const code = url.searchParams.get('code')
-        if (!code) throw new Error('인증 코드가 없어요')
-
-        // code → token 교환
-        const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: new URLSearchParams({
-            code,
-            client_id: GOOGLE_WEB_CLIENT_ID,
-            redirect_uri: 'https://keystone-cam.vercel.app/google-callback.html',
-            grant_type: 'authorization_code',
-          }),
-        })
-        const tokenData = await tokenRes.json()
-
-        if (!tokenData.id_token) throw new Error(tokenData.error_description || '토큰 교환 실패')
-
-        // Firebase 로그인
-        const credential = GoogleAuthProvider.credential(tokenData.id_token)
-        const userCred = await signInWithCredential(auth, credential)
-        resolve(userCred.user)
-      } catch (err) {
-        reject(err)
-      }
-    })
-
-    const params = new URLSearchParams({
+  // code → token 교환
+  const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      code,
       client_id: GOOGLE_WEB_CLIENT_ID,
       redirect_uri: 'https://keystone-cam.vercel.app/google-callback.html',
-      response_type: 'code',
-      scope: 'openid email profile',
-      state,
-      access_type: 'offline',
-      prompt: 'select_account',
-    })
-
-    Browser.open({ url: `https://accounts.google.com/o/oauth2/v2/auth?${params}` })
+      grant_type: 'authorization_code',
+    }),
   })
+  const tokenData = await tokenRes.json()
+
+  if (!tokenData.id_token) throw new Error(tokenData.error_description || '토큰 교환 실패')
+
+  const credential = GoogleAuthProvider.credential(tokenData.id_token)
+  const userCred = await signInWithCredential(auth, credential)
+  return userCred.user
 }
 
 // ─── 카카오 로그인 ──────────────────────────────────────────────────
 export async function loginWithKakao() {
-  const { Browser } = await import('@capacitor/browser')
-  const { App: CapApp } = await import('@capacitor/app')
+  // 콜백 리스너 먼저 등록
+  const callbackPromise = waitForOAuthCallback('sportsarchive://kakao-callback')
 
-  return new Promise((resolve, reject) => {
-    const listener = CapApp.addListener('appUrlOpen', async (event) => {
-      if (!event.url.startsWith('sportsarchive://kakao-callback')) return
+  const params = new URLSearchParams({
+    client_id: KAKAO_REST_API_KEY,
+    redirect_uri: KAKAO_REDIRECT_URI,
+    response_type: 'code',
+  })
 
-      await Browser.close()
-      listener.remove()
+  if (isNative) {
+    openInSafari(`https://kauth.kakao.com/oauth/authorize?${params}`)
+  } else {
+    window.open(`https://kauth.kakao.com/oauth/authorize?${params}`, '_blank')
+  }
 
-      try {
-        const url = new URL(event.url.replace('sportsarchive://', 'https://'))
-        const code = url.searchParams.get('code')
-        if (!code) throw new Error('인증 코드가 없어요')
+  const urlString = await callbackPromise
+  const url = new URL(urlString.replace('sportsarchive://', 'https://'))
+  const code = url.searchParams.get('code')
+  if (!code) throw new Error('인증 코드가 없어요')
 
-        // code → 카카오 토큰 교환
-        const tokenRes = await fetch('https://kauth.kakao.com/oauth/token', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: new URLSearchParams({
-            grant_type: 'authorization_code',
-            client_id: KAKAO_REST_API_KEY,
-            redirect_uri: KAKAO_REDIRECT_URI,
-            code,
-          }),
-        })
-        const tokenData = await tokenRes.json()
-
-        if (!tokenData.access_token) throw new Error('카카오 토큰 교환 실패')
-
-        // 카카오 유저 정보 가져오기
-        const userRes = await fetch('https://kapi.kakao.com/v2/user/me', {
-          headers: { Authorization: `Bearer ${tokenData.access_token}` },
-        })
-        const userData = await userRes.json()
-
-        const kakaoId = userData.id
-        const nickname = userData.kakao_account?.profile?.nickname || ''
-        const syntheticEmail = `kakao_${kakaoId}@sportsarchive.app`
-        const syntheticPassword = `kk_${kakaoId}_${KAKAO_REST_API_KEY.slice(0, 8)}_sa`
-
-        // Firebase 로그인 또는 회원가입
-        let userCred
-        try {
-          userCred = await signInWithEmailAndPassword(auth, syntheticEmail, syntheticPassword)
-        } catch (e) {
-          if (e.code === 'auth/user-not-found' || e.code === 'auth/invalid-credential') {
-            userCred = await createUserWithEmailAndPassword(auth, syntheticEmail, syntheticPassword)
-          } else {
-            throw e
-          }
-        }
-
-        // 카카오 프로필 Firestore에 저장
-        await saveUserProfile(userCred.user.uid, {
-          kakaoId: String(kakaoId),
-          name: nickname,
-          provider: 'kakao',
-        })
-
-        resolve(userCred.user)
-      } catch (err) {
-        reject(err)
-      }
-    })
-
-    const params = new URLSearchParams({
+  // code → 카카오 토큰 교환
+  const tokenRes = await fetch('https://kauth.kakao.com/oauth/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type: 'authorization_code',
       client_id: KAKAO_REST_API_KEY,
       redirect_uri: KAKAO_REDIRECT_URI,
-      response_type: 'code',
-    })
-
-    Browser.open({ url: `https://kauth.kakao.com/oauth/authorize?${params}` })
+      code,
+    }),
   })
+  const tokenData = await tokenRes.json()
+
+  if (!tokenData.access_token) throw new Error('카카오 토큰 교환 실패')
+
+  // 카카오 유저 정보 가져오기
+  const userRes = await fetch('https://kapi.kakao.com/v2/user/me', {
+    headers: { Authorization: `Bearer ${tokenData.access_token}` },
+  })
+  const userData = await userRes.json()
+
+  const kakaoId = userData.id
+  const nickname = userData.kakao_account?.profile?.nickname || ''
+  const syntheticEmail = `kakao_${kakaoId}@sportsarchive.app`
+  const syntheticPassword = `kk_${kakaoId}_${KAKAO_REST_API_KEY.slice(0, 8)}_sa`
+
+  let userCred
+  try {
+    userCred = await signInWithEmailAndPassword(auth, syntheticEmail, syntheticPassword)
+  } catch (e) {
+    if (e.code === 'auth/user-not-found' || e.code === 'auth/invalid-credential') {
+      userCred = await createUserWithEmailAndPassword(auth, syntheticEmail, syntheticPassword)
+    } else {
+      throw e
+    }
+  }
+
+  await saveUserProfile(userCred.user.uid, {
+    kakaoId: String(kakaoId),
+    name: nickname,
+    provider: 'kakao',
+  })
+
+  return userCred.user
 }
 
 // ─── 이메일 로그인 ──────────────────────────────────────────────────
