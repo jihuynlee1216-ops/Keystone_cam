@@ -152,11 +152,12 @@ export async function loginWithKakao() {
       client_id: KAKAO_REST_API_KEY,
       redirect_uri: KAKAO_REDIRECT_URI,
       code,
+      client_secret: 'P7NJhqQmXu5TAxx243UsIe9uXGLhyGRo',
     }),
   })
   const tokenData = await tokenRes.json()
 
-  if (!tokenData.access_token) throw new Error('카카오 토큰 교환 실패')
+  if (!tokenData.access_token) throw new Error(tokenData.error_description || tokenData.error || '카카오 토큰 교환 실패')
 
   // 카카오 유저 정보 가져오기
   const userRes = await fetch('https://kapi.kakao.com/v2/user/me', {
