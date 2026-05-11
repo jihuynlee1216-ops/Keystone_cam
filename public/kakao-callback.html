@@ -2,17 +2,30 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>로그인 중...</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>로그인 완료</title>
   <style>
-    body { display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; font-family: -apple-system, sans-serif; background: #fafaf8; color: #666; }
-    p { font-size: 16px; }
+    body { display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; font-family: -apple-system, sans-serif; background: #fafaf8; color: #333; }
+    .wrap { text-align: center; padding: 24px; }
+    p { font-size: 16px; margin-bottom: 20px; color: #666; }
+    a { display: inline-block; padding: 14px 32px; background: #FEE500; color: #191919; border-radius: 12px; font-size: 15px; font-weight: 600; text-decoration: none; }
   </style>
 </head>
 <body>
-  <p>앱으로 돌아가는 중...</p>
+  <div class="wrap">
+    <p>카카오 로그인이 완료되었어요!</p>
+    <a id="openApp" href="#">앱으로 돌아가기</a>
+  </div>
   <script>
-    const params = window.location.search
-    window.location.href = 'sportsarchive://kakao-callback' + params
+    var appUrl = 'sportsarchive://kakao-callback' + window.location.search;
+
+    // 자동으로 앱 열기 시도
+    setTimeout(function() {
+      window.location.href = appUrl;
+    }, 500);
+
+    // 버튼 클릭으로도 앱 열기
+    document.getElementById('openApp').href = appUrl;
   </script>
 </body>
 </html>
