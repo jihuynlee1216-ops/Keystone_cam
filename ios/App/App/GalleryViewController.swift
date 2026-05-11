@@ -2,6 +2,7 @@ import UIKit
 import WebKit
 import Capacitor
 import Photos
+import SafariServices
 
 class GalleryViewController: CAPBridgeViewController {
 
@@ -9,6 +10,26 @@ class GalleryViewController: CAPBridgeViewController {
         super.viewDidLoad()
         webView?.configuration.userContentController
             .add(GallerySaveHandler(webView: webView), name: "saveToGallery")
+        webView?.configuration.userContentController
+            .add(OpenSafariHandler(viewController: self), name: "openSafari")
+    }
+}
+
+// Safari 열기 핸들러
+class OpenSafariHandler: NSObject, WKScriptMessageHandler {
+    weak var viewController: UIViewController?
+
+    init(viewController: UIViewController?) {
+        self.viewController = viewController
+    }
+
+    func userContentController(
+        _ userContentController: WKUserContentController,
+        didReceive message: WKScriptMessage
+    ) {
+        guard let urlString = message.body as? String,
+              let url = URL(string: urlString) else { return }
+        UIApplication.shared.open(url)
     }
 }
 

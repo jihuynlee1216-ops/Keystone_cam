@@ -77,7 +77,7 @@ export default function LoginPage() {
     <div className="login-page">
       <div className="login-content">
         <div className="login-header">
-          <h1 className="login-title">직관로그</h1>
+          <h1 className="login-title">팬로그</h1>
           <p className="login-subtitle">나만의 경기 기록을 남겨보세요</p>
         </div>
 

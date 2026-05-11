@@ -54,7 +54,7 @@ export default function PermissionsPage() {
         <div className="permissions-header">
           <h1 className="permissions-title">앱 접근 권한 안내</h1>
           <p className="permissions-subtitle">
-            직관로그 서비스 사용을 위해{'\n'}다음 접근 권한 허용이 필요합니다
+            팬로그 서비스 사용을 위해{'\n'}다음 접근 권한 허용이 필요합니다
           </p>
         </div>
 
