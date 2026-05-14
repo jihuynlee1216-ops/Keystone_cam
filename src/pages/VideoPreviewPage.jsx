@@ -439,7 +439,7 @@ export default function VideoPreviewPage() {
   const relevantLogs = filterLogsByType(state.logs, type, currentYear, currentMon)
 
   const titleText = type === 'monthly'
-    ? `나의 ${currentMon}월 팬로그`
+    ? `나의 ${currentMon}월 팬카이브`
     : `나의 ${currentYear} 시즌 로그`
 
   const descText = type === 'monthly'

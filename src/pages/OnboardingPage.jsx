@@ -60,7 +60,7 @@ export default function OnboardingPage() {
             <div className="onboarding__character-wrap">
               <BaseballCharacter size={120} mood="happy" />
             </div>
-            <h1 className="onboarding__title">팬로그</h1>
+            <h1 className="onboarding__title">팬카이브</h1>
             <p className="onboarding__desc">
               경기장에서 느꼈던 모든 감정을<br />
               아름다운 기록으로 남겨보세요.

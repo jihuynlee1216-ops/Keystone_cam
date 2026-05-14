@@ -1,6 +1,6 @@
 {
   "appId": "com.smarter.sportsarchive",
-  "appName": "팬로그",
+  "appName": "팬카이브",
   "webDir": "dist",
   "server": {
     "iosScheme": "https"

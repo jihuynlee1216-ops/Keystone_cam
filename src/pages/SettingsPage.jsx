@@ -123,7 +123,7 @@ export default function SettingsPage() {
         </section>
 
         {/* ── 앱 정보 ── */}
-        <p className="settings-app-version">팬로그 v0.1.0</p>
+        <p className="settings-app-version">팬카이브 v0.1.0</p>
       </div>
 
       {/* ── 팀 선택 바텀시트 ── */}
