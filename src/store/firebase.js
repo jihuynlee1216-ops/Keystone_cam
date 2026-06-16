@@ -37,12 +37,19 @@ export const auth = initializeAuth(app, {
 })
 export const db = getFirestore(app)
 
-// ─── 설정값 (콘솔 등록 후 교체) ────────────────────────────────────
+// ─── 설정값 ──────────────────────────────────────────────────────
+// client_id 류는 공개돼도 되는 식별자라 클라이언트에 둬도 되지만,
+// client_secret 은 절대 클라이언트/번들에 두지 않고 서버리스 프록시에서만 사용한다.
 // Firebase 콘솔 > Authentication > Sign-in method > Google > Web client ID
 const GOOGLE_WEB_CLIENT_ID = '1011804159446-enau53h53kmqpr56l7jp0m319ulbtjl4.apps.googleusercontent.com'
-// 카카오 developers.kakao.com > 앱 > REST API 키
+const GOOGLE_REDIRECT_URI = 'https://keystone-cam.vercel.app/google-callback.html'
+// 토큰 교환(client_secret 사용)은 서버리스 프록시 경유 — api/google-token.js
+const GOOGLE_TOKEN_PROXY = 'https://keystone-cam.vercel.app/api/google-token'
+// 카카오 developers.kakao.com > 앱 > REST API 키 (client_id 성격, 공개 무방)
 const KAKAO_REST_API_KEY = 'ef050dae695aed6cd66f27e3b12c001d'
 const KAKAO_REDIRECT_URI = 'https://keystone-cam.vercel.app/kakao-callback.html'
+// 토큰 교환은 서버리스 프록시 경유 (CORS·client_secret 노출 회피) — api/kakao-token.js
+const KAKAO_TOKEN_PROXY = 'https://keystone-cam.vercel.app/api/kakao-token'
 
 const isNative = !!window.webkit?.messageHandlers
 
@@ -86,7 +93,7 @@ export async function loginWithGoogle() {
   // Safari에서 Google OAuth 열기
   const params = new URLSearchParams({
     client_id: GOOGLE_WEB_CLIENT_ID,
-    redirect_uri: 'https://keystone-cam.vercel.app/google-callback.html',
+    redirect_uri: GOOGLE_REDIRECT_URI,
     response_type: 'code',
     scope: 'openid email profile',
     state: Math.random().toString(36).slice(2),
@@ -101,20 +108,15 @@ export async function loginWithGoogle() {
   const code = url.searchParams.get('code')
   if (!code) throw new Error('인증 코드가 없어요')
 
-  // code → token 교환
-  const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+  // code → token 교환 (client_secret 노출 회피 위해 서버리스 프록시 경유)
+  const tokenRes = await fetch(GOOGLE_TOKEN_PROXY, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      code,
-      client_id: GOOGLE_WEB_CLIENT_ID,
-      redirect_uri: 'https://keystone-cam.vercel.app/google-callback.html',
-      grant_type: 'authorization_code',
-    }),
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code, redirect_uri: GOOGLE_REDIRECT_URI }),
   })
   const tokenData = await tokenRes.json()
 
-  if (!tokenData.id_token) throw new Error(tokenData.error_description || '토큰 교환 실패')
+  if (!tokenData.id_token) throw new Error(tokenData.error || tokenData.error_description || '토큰 교환 실패')
 
   const credential = GoogleAuthProvider.credential(tokenData.id_token)
   const userCred = await signInWithCredential(auth, credential)
@@ -143,30 +145,18 @@ export async function loginWithKakao() {
   const code = url.searchParams.get('code')
   if (!code) throw new Error('인증 코드가 없어요')
 
-  // code → 카카오 토큰 교환
-  const tokenRes = await fetch('https://kauth.kakao.com/oauth/token', {
+  // code → 서버리스 프록시에서 토큰 교환 + 유저 정보 조회 (CORS·시크릿 노출 회피)
+  const proxyRes = await fetch(KAKAO_TOKEN_PROXY, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      grant_type: 'authorization_code',
-      client_id: KAKAO_REST_API_KEY,
-      redirect_uri: KAKAO_REDIRECT_URI,
-      code,
-      client_secret: 'P7NJhqQmXu5TAxx243UsIe9uXGLhyGRo',
-    }),
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code, redirect_uri: KAKAO_REDIRECT_URI }),
   })
-  const tokenData = await tokenRes.json()
+  const userData = await proxyRes.json()
 
-  if (!tokenData.access_token) throw new Error(tokenData.error_description || tokenData.error || '카카오 토큰 교환 실패')
-
-  // 카카오 유저 정보 가져오기
-  const userRes = await fetch('https://kapi.kakao.com/v2/user/me', {
-    headers: { Authorization: `Bearer ${tokenData.access_token}` },
-  })
-  const userData = await userRes.json()
+  if (!userData.id) throw new Error(userData.error || '카카오 로그인 실패')
 
   const kakaoId = userData.id
-  const nickname = userData.kakao_account?.profile?.nickname || ''
+  const nickname = userData.nickname || ''
   const syntheticEmail = `kakao_${kakaoId}@sportsarchive.app`
   const syntheticPassword = `kk_${kakaoId}_${KAKAO_REST_API_KEY.slice(0, 8)}_sa`
 

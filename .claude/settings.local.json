@@ -35,7 +35,16 @@
       "Bash(pip3 install:*)",
       "Bash(python3:*)",
       "WebFetch(domain:keystone-cam.vercel.app)",
-      "WebFetch(domain:developers.kakao.com)"
+      "WebFetch(domain:developers.kakao.com)",
+      "Bash(curl:*)",
+      "Bash(xcodebuild -version)",
+      "Bash(softwareupdate --list)",
+      "Bash(mdls -name kMDItemVersion /Applications/Xcode.app)",
+      "Bash(mdfind \"kMDItemCFBundleIdentifier == 'com.apple.dt.Xcode'\")",
+      "Bash(defaults read *)",
+      "Bash(system_profiler SPHardwareDataType)",
+      "Bash(xcode-select -p)",
+      "Bash(plutil -p \"/Users/jihyun/Library/Developer/Xcode/Archives/2026-05-16/App 5-16-26, 4.57 PM.xcarchive/Info.plist\")"
     ]
   }
 }
