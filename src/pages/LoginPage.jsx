@@ -54,7 +54,7 @@ export default function LoginPage() {
       await loginWithGoogle()
     } catch (err) {
       if (err.code !== 'auth/popup-closed-by-user') {
-        setError('Google 로그인에 실패했어요')
+        setError('Google 로그인 실패: ' + (err.code || err.message || err))
       }
     } finally {
       setLoading(false)

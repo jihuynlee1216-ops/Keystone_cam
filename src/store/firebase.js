@@ -53,6 +53,20 @@ const KAKAO_TOKEN_PROXY = 'https://keystone-cam.vercel.app/api/kakao-token'
 
 const isNative = !!window.webkit?.messageHandlers
 
+// fetch + 타임아웃 (프록시가 응답 없이 멈추면 로그인이 "잠시만..."에 무한정 걸리는 것 방지)
+async function fetchWithTimeout(url, options = {}, ms = 25000) {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), ms)
+  try {
+    return await fetch(url, { ...options, signal: controller.signal })
+  } catch (e) {
+    if (e.name === 'AbortError') throw new Error('서버 응답이 없어요. 네트워크를 확인해주세요.')
+    throw e
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 // ─── Safari 열기 (네이티브 or 웹) ──────────────────────────────────
 function openInSafari(url) {
   if (window.webkit?.messageHandlers?.openSafari) {
@@ -109,7 +123,7 @@ export async function loginWithGoogle() {
   if (!code) throw new Error('인증 코드가 없어요')
 
   // code → token 교환 (client_secret 노출 회피 위해 서버리스 프록시 경유)
-  const tokenRes = await fetch(GOOGLE_TOKEN_PROXY, {
+  const tokenRes = await fetchWithTimeout(GOOGLE_TOKEN_PROXY, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ code, redirect_uri: GOOGLE_REDIRECT_URI }),
@@ -146,7 +160,7 @@ export async function loginWithKakao() {
   if (!code) throw new Error('인증 코드가 없어요')
 
   // code → 서버리스 프록시에서 토큰 교환 + 유저 정보 조회 (CORS·시크릿 노출 회피)
-  const proxyRes = await fetch(KAKAO_TOKEN_PROXY, {
+  const proxyRes = await fetchWithTimeout(KAKAO_TOKEN_PROXY, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ code, redirect_uri: KAKAO_REDIRECT_URI }),
