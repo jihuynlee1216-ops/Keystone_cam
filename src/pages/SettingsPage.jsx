@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react'
 import { useApp } from '../store/AppContext.jsx'
-import { logout, auth } from '../store/firebase.js'
+import { logout, deleteAccount, auth } from '../store/firebase.js'
 import BottomNav from '../components/BottomNav.jsx'
 import TeamMascot from '../components/TeamMascot.jsx'
 import './SettingsPage.css'
@@ -27,6 +27,9 @@ export default function SettingsPage() {
   const [nameDraft, setNameDraft] = useState(user.name || '')
   const [showTeamPicker, setShowTeamPicker] = useState(false)
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [deleteError, setDeleteError] = useState(null)
   const nameInputRef = useRef(null)
 
   const handleSaveName = () => {
@@ -44,6 +47,24 @@ export default function SettingsPage() {
 
   const handleLogout = async () => {
     await logout()
+  }
+
+  const handleDeleteAccount = async () => {
+    setDeleteError(null)
+    setDeleting(true)
+    try {
+      await deleteAccount()
+      // 성공 시 onAuth가 로그인 화면으로 자동 전환
+    } catch (err) {
+      if (err.code === 'requires-recent-login') {
+        // 이미 로그아웃됨 → 재로그인 안내
+        setDeleteError(err.message)
+      } else {
+        setDeleteError('계정 삭제에 실패했어요: ' + (err.code || err.message || err))
+      }
+      setDeleting(false)
+      setShowDeleteConfirm(false)
+    }
   }
 
   return (
@@ -119,7 +140,14 @@ export default function SettingsPage() {
                 <path d="M9 18l6-6-6-6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
             </button>
+            <button className="settings-item settings-item--danger" onClick={() => { setDeleteError(null); setShowDeleteConfirm(true) }}>
+              <span className="settings-item__label">계정 삭제</span>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                <path d="M9 18l6-6-6-6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </button>
           </div>
+          {deleteError && <p className="settings-delete-error">{deleteError}</p>}
         </section>
 
         {/* ── 앱 정보 ── */}
@@ -161,6 +189,24 @@ export default function SettingsPage() {
             <div className="settings-confirm__actions">
               <button className="settings-confirm__btn settings-confirm__btn--cancel" onClick={() => setShowLogoutConfirm(false)}>취소</button>
               <button className="settings-confirm__btn settings-confirm__btn--confirm" onClick={handleLogout}>로그아웃</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── 계정 삭제 확인 ── */}
+      {showDeleteConfirm && (
+        <div className="settings-overlay" onClick={() => !deleting && setShowDeleteConfirm(false)}>
+          <div className="settings-confirm" onClick={e => e.stopPropagation()}>
+            <p className="settings-confirm__title">계정을 삭제하시겠어요?</p>
+            <p className="settings-confirm__desc">
+              계정과 모든 경기 기록·사진이 <b>영구적으로 삭제</b>되며 복구할 수 없어요.
+            </p>
+            <div className="settings-confirm__actions">
+              <button className="settings-confirm__btn settings-confirm__btn--cancel" disabled={deleting} onClick={() => setShowDeleteConfirm(false)}>취소</button>
+              <button className="settings-confirm__btn settings-confirm__btn--confirm" disabled={deleting} onClick={handleDeleteAccount}>
+                {deleting ? '삭제 중...' : '계정 삭제'}
+              </button>
             </div>
           </div>
         </div>

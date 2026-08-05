@@ -75,6 +75,11 @@
   color: #191919;
 }
 
+.login-social-btn--apple {
+  background: #000000;
+  color: #FFFFFF;
+}
+
 /* ─── Divider ─────────────────────────────────────────────────────── */
 .login-divider {
   display: flex;

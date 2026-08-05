@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { loginWithGoogle, loginWithKakao, loginWithEmail } from '../store/firebase.js'
+import { loginWithGoogle, loginWithKakao, loginWithApple, loginWithEmail } from '../store/firebase.js'
 import SignupPage from './SignupPage.jsx'
 import './LoginPage.css'
 
@@ -73,6 +73,21 @@ export default function LoginPage() {
     }
   }
 
+  const handleApple = async () => {
+    setError(null)
+    setLoading(true)
+    try {
+      await loginWithApple()
+    } catch (err) {
+      // 사용자가 시트를 닫은 경우(취소)엔 에러 표시 안 함
+      const msg = String(err?.message || err || '').toLowerCase()
+      const canceled = err?.code === '1001' || msg.includes('cancel') || msg.includes('1001')
+      if (!canceled) setError('Apple 로그인 실패: ' + (err.code || err.message || err))
+    } finally {
+      setLoading(false)
+    }
+  }
+
   return (
     <div className="login-page">
       <div className="login-content">
@@ -83,6 +98,12 @@ export default function LoginPage() {
 
         {/* 소셜 로그인 */}
         <div className="login-social">
+          <button className="login-social-btn login-social-btn--apple" onClick={handleApple} disabled={loading}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M17.05 12.54c-.03-2.6 2.13-3.85 2.22-3.91-1.21-1.77-3.1-2.01-3.77-2.04-1.6-.16-3.13.94-3.94.94-.81 0-2.07-.92-3.4-.9-1.75.03-3.36 1.02-4.26 2.58-1.82 3.16-.47 7.83 1.3 10.4.86 1.25 1.89 2.66 3.24 2.61 1.3-.05 1.79-.84 3.36-.84 1.57 0 2.01.84 3.39.81 1.4-.02 2.29-1.28 3.15-2.54.99-1.46 1.4-2.87 1.42-2.94-.03-.01-2.73-1.05-2.76-4.16zM14.53 4.6c.72-.87 1.2-2.08 1.07-3.28-1.03.04-2.28.69-3.02 1.55-.66.77-1.24 2-1.09 3.18 1.15.09 2.32-.58 3.04-1.45z"/>
+            </svg>
+            Apple로 계속하기
+          </button>
           <button className="login-social-btn login-social-btn--kakao" onClick={handleKakao} disabled={loading}>
             <svg width="18" height="18" viewBox="0 0 24 24">
               <path d="M12 3C6.48 3 2 6.58 2 10.94c0 2.8 1.86 5.27 4.66 6.66-.15.53-.95 3.42-.98 3.64 0 0-.02.16.08.22.1.06.22.02.22.02.29-.04 3.36-2.2 3.9-2.57.68.1 1.39.15 2.12.15 5.52 0 10-3.58 10-7.94S17.52 3 12 3z" fill="#191919"/>

@@ -256,6 +256,22 @@
   margin-bottom: 20px;
 }
 
+.settings-confirm__desc {
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--color-text-secondary);
+  margin-top: -12px;
+  margin-bottom: 20px;
+}
+
+.settings-delete-error {
+  font-size: 13px;
+  color: #E5484D;
+  margin-top: 10px;
+  padding: 0 4px;
+  line-height: 1.5;
+}
+
 .settings-confirm__actions {
   display: flex;
   gap: 10px;

@@ -40,3 +40,14 @@ export async function deleteMedia(id) {
     tx.onerror    = e => reject(e.target.error)
   })
 }
+
+// 계정 삭제 시 기기에 저장된 모든 미디어 제거
+export async function clearAllMedia() {
+  const db = await openDB()
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE, 'readwrite')
+    tx.objectStore(STORE).clear()
+    tx.oncomplete = () => resolve()
+    tx.onerror    = e => reject(e.target.error)
+  })
+}
